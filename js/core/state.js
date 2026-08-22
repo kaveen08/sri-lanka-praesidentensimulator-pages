@@ -5,6 +5,7 @@
   'use strict';
 
   var U = SL.util, B = SL.data.baseline, G = SL.data.geo, M = SL.model;
+  var Gov = SL.data.governance || { MINISTRIES: [], INSTITUTIONS: [] };
   var SAVE_KEY = 'lk_president_sim_v1';
   var SAVE_META_KEY = SAVE_KEY + '_meta';
   var isLocalHost = location.protocol === 'http:' &&
@@ -31,6 +32,44 @@
   var isRemoteTailscaleApi = !isTailscaleHost &&
     /^https:\/\/[^/]+\.ts\.net\/api$/i.test(API_ROOT);
 
+  function defaultParliament(govSeats) {
+    var seats = {};
+    (SL.data.parties.PARTIES || []).forEach(function (p) { seats[p.k] = p.seats || 0; });
+    var baselineGov = seats.NPP || B.META.seatsGov;
+    var target = U.clamp(govSeats === undefined ? baselineGov : govSeats, 0, B.META.seatsTotal);
+    var delta = target - baselineGov;
+    seats.NPP = target;
+    if (delta > 0) {
+      ['SJB', 'NDF', 'SLPP', 'ITAK', 'SLMC', 'CWC', 'SB', 'TNPF', 'OTH'].forEach(function (k) {
+        var take = Math.min(seats[k] || 0, delta);
+        seats[k] = (seats[k] || 0) - take;
+        delta -= take;
+      });
+    } else if (delta < 0) {
+      seats.SJB = (seats.SJB || 0) - delta;
+    }
+    return { seats: seats, lastWhipTurn: -1, history: [] };
+  }
+
+  function defaultCabinet() {
+    var cabinet = {};
+    Gov.MINISTRIES.forEach(function (m, idx) {
+      cabinet[m.k] = {
+        name: m.name, performance: 48 + (idx * 7 % 17), successes: 0, failures: 0,
+        scandal: null, generation: 0, appointedTurn: 0, lastOutcomeTurn: -99
+      };
+    });
+    return cabinet;
+  }
+
+  function defaultInstitutions() {
+    var institutions = {};
+    Gov.INSTITUTIONS.forEach(function (i, idx) {
+      institutions[i.k] = { performance: 48 + (idx * 9 % 19), successes: 0, failures: 0, lastOutcomeTurn: -99 };
+    });
+    return institutions;
+  }
+
   S.create = function (opts) {
     opts = opts || {};
     var st = {
@@ -54,6 +93,11 @@
       presidentialPower: 100,       /* sinkt, wenn die Exekutivpräsidentschaft beschnitten wird */
       seatsGov: B.META.seatsGov,
       seatsTotal: B.META.seatsTotal,
+      parliament: defaultParliament(B.META.seatsGov),
+      cabinet: defaultCabinet(),
+      institutions: defaultInstitutions(),
+      consequenceQueue: [],
+      governanceHistory: [],
 
       gdpN: B.META.gdpNominal,      /* nominales BIP in LKR Mrd. */
       debt: B.META.gdpNominal * B.INDICATORS.debtGdp / 100,
@@ -192,6 +236,24 @@
     if (st.termLimit === undefined) st.termLimit = st.flags.termLimitRemoved ? null : 2;
     st.electionsWon = st.electionsWon || Math.max(0, st.termNumber - 1);
     if (!Array.isArray(st.electionHistory)) st.electionHistory = [];
+    st.parliament = st.parliament || defaultParliament(st.seatsGov);
+    st.parliament.seats = st.parliament.seats || defaultParliament(st.seatsGov).seats;
+    st.parliament.history = Array.isArray(st.parliament.history) ? st.parliament.history : [];
+    if (st.parliament.lastWhipTurn === undefined) st.parliament.lastWhipTurn = -1;
+    st.seatsGov = st.parliament.seats.NPP === undefined ? st.seatsGov : st.parliament.seats.NPP;
+
+    var cabinetDefaults = defaultCabinet();
+    st.cabinet = st.cabinet || {};
+    Object.keys(cabinetDefaults).forEach(function (k) {
+      st.cabinet[k] = Object.assign(cabinetDefaults[k], st.cabinet[k] || {});
+    });
+    var institutionDefaults = defaultInstitutions();
+    st.institutions = st.institutions || {};
+    Object.keys(institutionDefaults).forEach(function (k) {
+      st.institutions[k] = Object.assign(institutionDefaults[k], st.institutions[k] || {});
+    });
+    st.consequenceQueue = Array.isArray(st.consequenceQueue) ? st.consequenceQueue : [];
+    st.governanceHistory = Array.isArray(st.governanceHistory) ? st.governanceHistory : [];
 
     /* Spielstände aus der früheren Ein-Amtszeit-Version endeten trotz
        Wiederwahlsieg. Sie werden automatisch in die zweite Amtszeit migriert. */

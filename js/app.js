@@ -21,6 +21,7 @@
     VIEWS.budget = V.budget;
     VIEWS.devolution = V.devolution;
     VIEWS.parties = V.parties;
+    VIEWS.cabinet = V.cabinet;
     VIEWS.risks = V.risks;
     VIEWS.report = V.report;
 
@@ -138,6 +139,7 @@
     ] },
     { group: 'Politik', items: [
       { k: 'parties', ico: '⌘', label: 'Parteien' },
+      { k: 'cabinet', ico: '♜', label: 'Kabinett' },
       { k: 'report', ico: '★', label: 'Bericht' }
     ] }
   ];
@@ -272,9 +274,42 @@
     St.save(st);
     A.render();
     (res.messages || []).forEach(function (m) { X.toast(m.kind, m.title, m.text); });
+    if (res.outcomes && res.outcomes.length) { showQuarterOutcomes(res); return; }
+    finishTurnFlow(res);
+  }
+
+  function finishTurnFlow(res) {
     if (st.gameOver) { A.go('report'); showGameOver(); return; }
     if (res.election && res.election.won) { showElection(res.election); return; }
     if (res.event) showEvent();
+  }
+
+  function showQuarterOutcomes(res) {
+    var cards = res.outcomes.map(function (o) {
+      var eff = {};
+      (o.effects || []).forEach(function (e) { eff[e.k] = e.v; });
+      return el('div', { class: 'quarter-outcome ' + o.kind }, [
+        el('div', { class: 'qo-marker', text: o.kind === 'good' ? 'ERFOLG' : 'RISIKO' }),
+        el('div', { class: 'qo-main' }, [
+          el('div', { class: 'row gap8 wrap' }, [
+            el('strong', { class: 'qo-title', text: o.title }),
+            o.actor ? X.badge(o.actor, o.kind === 'good' ? 'green' : 'red') : null,
+            o.seats ? X.badge(U.sign(o.seats, 0) + ' Sitze', o.seats > 0 ? 'green' : 'red') : null
+          ]),
+          o.source ? el('div', { class: 'xsmall faint', text: 'Quelle: ' + o.source }) : null,
+          el('div', { class: 'small muted qo-text', text: o.text }),
+          Object.keys(eff).length ? X.effectChips(eff, 4) : null
+        ])
+      ]);
+    });
+    var modal = X.modal({
+      title: 'Folgen des Quartals', tag: U.qLabel(st.year, st.q), tagCls: res.outcomes.some(function (o) { return o.kind === 'bad'; }) ? 'amber' : 'green', sticky: true,
+      body: el('div', { class: 'col gap10' }, [
+        el('div', { class: 'small muted', text: 'Ihre früheren Entscheidungen und die Arbeit des Staatsapparats haben sichtbare Folgen.' }),
+        el('div', { class: 'quarter-outcomes' }, cards)
+      ]),
+      actions: function (close) { return [el('button', { class: 'primary', text: 'Weiter', onclick: function () { close(); finishTurnFlow(res); } })]; }
+    });
   }
 
   function showEvent() {

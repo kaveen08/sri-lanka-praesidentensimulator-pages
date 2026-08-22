@@ -3,7 +3,8 @@
    ============================================================ */
 (function (V) {
   'use strict';
-  var U = SL.util, X = SL.ui, M = SL.model, E = SL.engine, G = SL.data.geo, el = U.el, svg = U.svg;
+  var U = SL.util, X = SL.ui, M = SL.model, E = SL.engine, G = SL.data.geo;
+  var Gov = SL.data.governance || { MINISTRIES: [], INSTITUTIONS: [] }, el = U.el, svg = U.svg;
 
   /* Filterzustand je Ansicht */
   var FS = {};
@@ -669,23 +670,65 @@
      PARTEIEN
      ========================================================= */
   V.parties = function (st, host) {
+    var P = SL.data.parties.PARTIES;
+    var seats = st.parliament && st.parliament.seats ? st.parliament.seats : {};
+    var selectedKey = FS.partySelected || 'NPP';
+    var selected = SL.data.parties.BY_KEY[selectedKey] || P[0];
+    var selectedSeats = seats[selected.k] === undefined ? selected.seats : seats[selected.k];
     host.appendChild(el('div', { class: 'view-head' }, [
       el('div', {}, [
-        el('h2', { text: 'Parteien und ihre Vorschläge' }),
-        el('div', { class: 'sub', text: 'Sitzverteilung der 2024 gewählten Legislaturperiode und die Programmpunkte, die die Parteien öffentlich vertreten. Über die Filter im Maßnahmenkatalog können Sie gezielt nach Vorschlägen einer Partei suchen.' })
+        el('h2', { text: 'Parlament und Parteien' }),
+        el('div', { class: 'sub', text: 'Die Sitzverteilung verändert sich im Spiel. Wählen Sie eine Farbe im Plenarsaal oder in der Legende, um die Fraktion genauer anzusehen.' })
       ])
     ]));
 
-    var P = SL.data.parties.PARTIES;
+    var talks = E.canCourtSeats(st);
+    host.appendChild(X.panel('Interaktive Sitzverteilung', [
+      el('div', { class: 'parliament-layout' }, [
+        el('div', {}, [
+          X.parliamentChart(st, selected.k, function (key) { FS.partySelected = key; SL.app.render(); }),
+          el('div', { class: 'parliament-legend' }, P.filter(function (p) { return (seats[p.k] || 0) > 0; }).map(function (p) {
+            return el('button', {
+              class: 'parl-legend-item' + (selected.k === p.k ? ' active' : ''),
+              onclick: function () { FS.partySelected = p.k; SL.app.render(); }
+            }, [
+              el('span', { class: 'parl-swatch', style: { background: p.color, boxShadow: '0 0 8px ' + p.color } }),
+              el('span', { text: p.name }),
+              el('strong', { class: 'mono', text: String(seats[p.k] || 0) })
+            ]);
+          }))
+        ]),
+        el('div', { class: 'parliament-detail' }, [
+          el('div', { class: 'hud-label', text: 'Ausgewählte Fraktion' }),
+          el('div', { class: 'parl-party-name', style: { color: selected.color }, text: selected.full }),
+          el('div', { class: 'parl-big-seat mono', text: selectedSeats + ' Sitze' }),
+          el('div', { class: 'small muted', style: { lineHeight: '1.6' }, text: selected.ideology + ' · ' + selected.lead }),
+          el('div', { class: 'majority-grid' }, [
+            el('div', {}, [el('span', { class: 'hud-label', text: 'Einfache Mehrheit' }), el('strong', { text: st.seatsGov >= 113 ? 'erreicht' : (113 - st.seatsGov) + ' fehlen' })]),
+            el('div', {}, [el('span', { class: 'hud-label', text: 'Zweidrittelmehrheit' }), el('strong', { text: st.seatsGov >= 150 ? 'erreicht' : (150 - st.seatsGov) + ' fehlen' })])
+          ]),
+          el('button', { class: 'primary', disabled: !talks.ok, title: talks.ok ? 'Kostet 14 politisches Kapital; Ausgang abhängig von Zustimmung und Legitimität.' : talks.why,
+            text: 'Fraktionsgespräche führen · 14 PK', onclick: function () {
+              var result = E.courtSeats(st); SL.state.save(st);
+              if (result.success) X.toast('good', 'Neue Unterstützung', result.seats + ' Sitze für die Regierungsfraktion gewonnen.');
+              else X.toast(result.ok ? 'warn' : 'bad', result.ok ? 'Ohne Ergebnis' : 'Nicht möglich', result.ok ? 'Kein Abgeordneter wechselte die Fraktion.' : result.why);
+              SL.app.render();
+            } }),
+          el('div', { class: 'xsmall faint', text: 'Ein Versuch pro Quartal. Erfolg ist nicht garantiert.' })
+        ])
+      ])
+    ], { class: 'parliament-panel' }));
+
     host.appendChild(el('div', { class: 'grid g2' }, P.map(function (p) {
       var pols = E.all().filter(function (x) { return (x.party || []).indexOf(p.k) >= 0; });
       var done = pols.filter(function (x) { return st.enacted[x.id]; }).length;
+      var liveSeats = seats[p.k] === undefined ? p.seats : seats[p.k];
       return el('div', { class: 'party-card corner-frame' }, [
         el('div', { class: 'pt-bar', style: { background: p.color, boxShadow: '0 0 14px ' + p.color } }),
         el('div', { class: 'row gap8 wrap', style: { marginLeft: '6px' } }, [
           el('span', { class: 'pt-name', style: { color: p.color }, text: p.name }),
           p.gov ? X.badge('Regierung', 'green') : X.badge('Opposition', ''),
-          X.badge(p.seats + ' Sitze', 'cy'),
+          X.badge(liveSeats + ' Sitze', 'cy'),
           el('span', { class: 'grow' }),
           X.badge(done + '/' + pols.length + ' umgesetzt', done > 0 ? 'green' : '')
         ]),
@@ -705,6 +748,83 @@
     })));
   };
 
+  /* =========================================================
+     KABINETT UND INSTITUTIONEN
+     ========================================================= */
+  V.cabinet = function (st, host) {
+    host.appendChild(el('div', { class: 'view-head' }, [
+      el('div', {}, [
+        el('h2', { text: 'Kabinett und Institutionen' }),
+        el('div', { class: 'sub', text: 'Leistung, Fehlschläge und Skandale werden bei jedem Quartalswechsel fortgeschrieben. Namen der Kabinettsmitglieder sind für die Simulation erfunden.' })
+      ])
+    ]));
+
+    host.appendChild(el('div', { class: 'cabinet-grid' }, Gov.MINISTRIES.map(function (def) {
+      var c = st.cabinet[def.k], can = E.canDismissMinister(st, def.k);
+      var tone = c.performance >= 62 ? 'g' : (c.performance >= 40 ? 'a' : 'r');
+      return el('div', { class: 'minister-card corner-frame' + (c.scandal ? ' scandal' : '') }, [
+        el('div', { class: 'minister-top' }, [
+          el('div', {}, [
+            el('div', { class: 'hud-label', text: def.office }),
+            el('div', { class: 'minister-name', text: c.name }),
+            el('div', { class: 'xsmall faint', text: def.ministry })
+          ]),
+          c.scandal ? X.badge('Skandal', 'red') : (c.failures >= 2 ? X.badge('unter Druck', 'amber') : X.badge('im Amt', 'green'))
+        ]),
+        X.meter({ label: 'Leistung', value: c.performance, min: 0, max: 100, text: U.n0(c.performance) + '/100', tone: tone }),
+        el('div', { class: 'minister-stats' }, [
+          el('span', { text: 'Erfolge ' + c.successes }), el('span', { text: 'Versagen ' + c.failures }),
+          el('span', { text: 'seit Q' + (c.appointedTurn + 1) })
+        ]),
+        c.scandal ? el('div', { class: 'minister-alert' }, [
+          el('strong', { text: c.scandal.title }), el('span', { text: c.scandal.text })
+        ]) : (c.failures >= 2 || c.performance < 38 ? el('div', { class: 'minister-alert warn', text: 'Wiederholte Fehler oder schwache Ressortführung rechtfertigen eine direkte Entlassung.' }) : null),
+        el('button', { class: 'tiny danger', disabled: !can.ok, title: can.ok ? 'Entlassung und Neubesetzung kosten 6 PK.' : can.why,
+          text: 'Direkt entlassen · 6 PK', onclick: function () { confirmDismiss(st, def, c); } })
+      ]);
+    })));
+
+    host.appendChild(X.panel('Unabhängige und staatliche Institutionen', [
+      el('div', { class: 'institution-grid' }, Gov.INSTITUTIONS.map(function (def) {
+        var i = st.institutions[def.k];
+        return el('div', { class: 'institution-card' }, [
+          el('div', { class: 'row gap8' }, [el('strong', { text: def.name }), el('span', { class: 'grow' }), X.badge(U.n0(i.performance) + '/100', i.performance >= 60 ? 'green' : (i.performance >= 40 ? 'amber' : 'red'))]),
+          X.meter({ label: 'Funktionsfähigkeit', value: i.performance, min: 0, max: 100, text: U.n0(i.performance) }),
+          el('div', { class: 'xsmall faint', text: i.successes + ' Erfolge · ' + i.failures + ' Versagen' })
+        ]);
+      }))
+    ]));
+
+    var history = (st.governanceHistory || []).slice(0, 8);
+    if (history.length) host.appendChild(X.panel('Jüngste Leistungsberichte', [
+      el('div', { class: 'governance-history' }, history.map(function (h) {
+        return el('div', { class: 'gov-history-item ' + h.kind }, [
+          el('span', { class: 'hud-label', text: 'Q' + (h.turn + 1) }),
+          el('div', {}, [el('strong', { text: h.title }), el('div', { class: 'small muted', text: h.text })])
+        ]);
+      }))
+    ]));
+  };
+
+  function confirmDismiss(st, def, c) {
+    X.modal({
+      title: c.name + ' entlassen?', tag: 'KABINETTSUMBILDUNG', tagCls: 'red',
+      body: el('div', { class: 'col gap10' }, [
+        el('div', { class: 'small', style: { lineHeight: '1.65' }, text: 'Sie entlassen ' + c.name + ' unmittelbar aus dem Ressort „' + def.ministry + '“. Eine neue, ebenfalls simulierte Person wird eingesetzt.' }),
+        c.scandal ? X.note(c.scandal.title + ': ' + c.scandal.text, 'bad') : X.note('Leistung ' + U.n0(c.performance) + '/100 · ' + c.failures + ' dokumentierte Fehlschläge.', 'warn'),
+        X.note('Kosten: 6 politisches Kapital. Die Neubesetzung startet mit neutraler Leistungsbewertung.')
+      ]),
+      actions: function (close) { return [
+        el('button', { class: 'ghost', text: 'Im Amt lassen', onclick: close }),
+        el('button', { class: 'danger', text: 'Jetzt entlassen', onclick: function () {
+          var r = E.dismissMinister(st, def.k); close();
+          if (r.ok) { SL.state.save(st); X.toast('good', 'Kabinett neu besetzt', r.newName + ' übernimmt das Ressort.'); SL.app.render(); }
+          else X.toast('bad', 'Nicht möglich', r.why);
+        } })
+      ]; }
+    });
+  }
+
   function showPartyPolicies(st, p) {
     var pols = E.all().filter(function (x) { return (x.party || []).indexOf(p.k) >= 0; });
     var body = el('div', { class: 'col gap10' }, [
@@ -713,7 +833,8 @@
         return pcard(st, x, function () { SL.app.render(); });
       }))
     ]);
-    X.modal({ title: 'Vorschläge: ' + p.name, tag: p.seats + ' SITZE', body: body,
+    var liveSeats = st.parliament && st.parliament.seats && st.parliament.seats[p.k] !== undefined ? st.parliament.seats[p.k] : p.seats;
+    X.modal({ title: 'Vorschläge: ' + p.name, tag: liveSeats + ' SITZE', body: body,
       actions: function (close) { return [el('button', { class: 'ghost', text: 'Schließen', onclick: close })]; } });
   }
 
