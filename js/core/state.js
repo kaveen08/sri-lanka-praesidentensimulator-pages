@@ -28,6 +28,8 @@
   var API_ROOT = String(window.ORACLE_BACKEND_URL || tailscaleBackendFromQuery() ||
     ((isLocalHost || isTailscaleHost) ? location.origin + '/api' :
       'http://127.0.0.1:8765/api')).replace(/\/$/, '');
+  var isRemoteTailscaleApi = !isTailscaleHost &&
+    /^https:\/\/[^/]+\.ts\.net\/api$/i.test(API_ROOT);
 
   S.create = function (opts) {
     opts = opts || {};
@@ -236,6 +238,8 @@
        hinweisen, dass das Ziel nur auf diesem Gerät (Loopback) liegt. */
     if (!isLocalHost && API_ROOT.indexOf('http://127.0.0.1') === 0) {
       options.targetAddressSpace = 'loopback';
+    } else if (isRemoteTailscaleApi) {
+      options.targetAddressSpace = 'local';
     }
     var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     if (controller) options.signal = controller.signal;
