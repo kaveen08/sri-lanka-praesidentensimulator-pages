@@ -1,0 +1,919 @@
+/* ============================================================
+   SIMULATIONSKERN
+   Alle Indikatoren werden aus einem Grundwert plus Modifikatoren
+   abgeleitet. Dadurch bleibt jede Wirkung nachvollziehbar und
+   umkehrbar.
+   ============================================================ */
+(function (E) {
+  'use strict';
+
+  var U = SL.util, B = SL.data.baseline, G = SL.data.geo, M = SL.model, St = SL.state;
+
+  /* Indikatoren, die aus Formeln entstehen statt aus Aufsummierung */
+  var FLOW = { growth: 1, inflation: 1, debtGdp: 1, reserves: 1, fx: 1, unemp: 1, youthUnemp: 1, poverty: 1 };
+
+  /* ---------------------------------------------------------
+     Katalogzugriff
+     --------------------------------------------------------- */
+  var byId = null;
+  E.all = function () { return SL.data.policies || []; };
+  E.byId = function (id) {
+    if (!byId) { byId = {}; E.all().forEach(function (p) { byId[p.id] = p; }); }
+    return byId[id];
+  };
+
+  /* ---------------------------------------------------------
+     Haushaltsrechnung
+     --------------------------------------------------------- */
+  /** Alle Haushaltsposten sind in Preisen von 2026 gespeichert und
+      wachsen automatisch mit dem nominalen BIP. Sonst würde die
+      Einnahmenquote allein durch Inflation jedes Jahr wegbrechen. */
+  E.scale = function (st) { return st.gdpN / B.META.gdpNominal; };
+
+  E.budget = function (st) {
+    var sc = E.scale(st);
+    var rev = 0, exp = 0, revLines = {}, expLines = {};
+
+    B.REVENUE.forEach(function (r) {
+      /* Nicht der eingestellte Satz zählt, sondern was davon ankommt. */
+      var v = E.revYield(st, r, st.budget.rev[r.k]) * sc;
+      revLines[r.k] = v; rev += v;
+    });
+    B.SPENDING.forEach(function (e) {
+      var v = (e.k === 'interest') ? E.interest(st) : st.budget.exp[e.k] * sc;
+      expLines[e.k] = v; exp += v;
+    });
+
+    /* Wirkung beschlossener Maßnahmen */
+    var pRev = 0, pExp = 0;
+    for (var id in st.enacted) {
+      var p = E.byId(id);
+      if (!p || !p.fiscal) continue;
+      var r = p.fiscal.rev || 0;
+      /* Mehreinnahmen fallen nur an, soweit der Staat sie auch einziehen kann.
+         Mindereinnahmen und Ausgaben entstehen dagegen in voller Höhe. */
+      if (r > 0) r *= E.riskFactor(st, p);
+      pRev += r * sc;
+      pExp += (p.fiscal.exp || 0) * sc;
+    }
+
+    var totalRev = rev + pRev;
+    var totalExp = exp + pExp;
+    var interest = expLines.interest;
+    var primaryExp = totalExp - interest;
+    var primary = totalRev - primaryExp;
+    var balance = totalRev - totalExp;
+
+    return {
+      revLines: revLines, expLines: expLines,
+      baseRev: rev, baseExp: exp,
+      policyRev: pRev, policyExp: pExp,
+      totalRev: totalRev, totalExp: totalExp,
+      interest: interest, primaryExp: primaryExp,
+      primary: primary, balance: balance,
+      revPct: totalRev / st.gdpN * 100,
+      expPct: totalExp / st.gdpN * 100,
+      primaryPct: primary / st.gdpN * 100,
+      balancePct: balance / st.gdpN * 100
+    };
+  };
+
+  E.interest = function (st) {
+    var rate = st.effRate * (1 + (72 - st.ind.imfCompl) / 260);
+    rate = U.clamp(rate, 0.05, 0.17);
+    return st.debt * rate;
+  };
+
+  E.primaryTarget = function (st) {
+    return st.year <= 2026 ? B.IMF.primaryTarget2026 : B.IMF.primaryTargetLater;
+  };
+
+  /* ---------------------------------------------------------
+     Wirkung der Haushaltsregler auf Indikatoren
+     --------------------------------------------------------- */
+  /* ---------------------------------------------------------
+     Ausweichreaktion der Steuerpflichtigen
+
+     Ein Steuersatz ist keine Einnahme. Wer den Hebel weit über den
+     Ausgangswert schiebt, erntet nicht proportional mehr, sondern
+     stößt auf Hinterziehung, Verlagerung ins Ausland, Schwarzhandel
+     und Auswanderung. Das Mehraufkommen läuft deshalb gegen eine
+     Obergrenze, die von der Leistungsfähigkeit der Steuerverwaltung
+     abhängt: eine gut arbeitende Behörde hebt sie deutlich an.
+
+     Senkungen wirken dagegen in voller Höhe. Wer auf Einnahmen
+     verzichtet, bekommt den Verzicht ungemildert in die Bücher.
+     --------------------------------------------------------- */
+  E.adminFactor = function (st) {
+    var f = 0.55 + U.clamp(st.ind.taxCompl, 0, 100) / 100 * 0.9;
+    if (SL.data.risks.solved(st, 'revenue_authority')) f += 0.18;
+    if (SL.data.risks.solved(st, 'customs_graft')) f += 0.08;
+    /* Wer auswandert, zahlt hier keine Steuern mehr. Anhaltende
+       Abwanderung verkleinert die Bemessungsgrundlage selbst und
+       senkt damit die Obergrenze dessen, was überhaupt einzuholen ist. */
+    f -= Math.max(0, st.ind.brainDrain - 68) / 100 * 0.85;
+    return Math.max(0.25, f);
+  };
+
+  /* Was ein Einnahmeposten tatsächlich einbringt */
+  E.revYield = function (st, line, value) {
+    var d = value - line.base;
+    if (d <= 0 || !line.elast) return value;
+    var cap = line.base * line.elast * E.adminFactor(st);
+    if (cap <= 0) return line.base;
+    return line.base + cap * (1 - Math.exp(-d / cap));
+  };
+
+  /* Aufschlüsselung für die Haushaltsansicht */
+  E.revDetail = function (st) {
+    var out = {};
+    B.REVENUE.forEach(function (line) {
+      var v = st.budget.rev[line.k];
+      var eff = E.revYield(st, line, v);
+      out[line.k] = {
+        nominal: v, effective: eff, lost: v - eff,
+        raise: line.base ? (v - line.base) / line.base : 0,
+        cap: line.elast ? line.base * (1 + line.elast * E.adminFactor(st)) : null
+      };
+    });
+    return out;
+  };
+
+  /* Überlastung eines Einnahmepostens: Anteil der Erhöhung jenseits
+     von 25 %, ab dem die strukturellen Schäden einsetzen. */
+  function revStrainWeight(line, cur) {
+    if (!line.strain || !line.base) return 0;
+    var raise = (cur - line.base) / line.base;
+    return Math.min(2.6, Math.max(0, raise - 0.25) * 2);
+  }
+  /* Unterversorgung eines Ausgabepostens: Anteil der Kürzung
+     jenseits von 15 %. */
+  function expCutWeight(line, cur) {
+    if (!line.cutStrain || !line.base) return 0;
+    var cut = (line.base - cur) / line.base;
+    return Math.min(2.6, Math.max(0, cut - 0.15) * 2.6);
+  }
+  E.revStrainWeight = revStrainWeight;
+  E.expCutWeight = expCutWeight;
+
+  E.budgetEffects = function (st) {
+    var out = {};
+    var add = function (k, v) { if (!isFinite(v)) return; out[k] = (out[k] || 0) + v; };
+
+    B.REVENUE.concat(B.SPENDING).forEach(function (line) {
+      var cur = (st.budget.rev[line.k] !== undefined) ? st.budget.rev[line.k] : st.budget.exp[line.k];
+      if (cur === undefined) return;
+      var d = cur - line.base;
+      if (line.eff) for (var k in line.eff) add(k, line.eff[k] * d);
+
+      /* Schäden durch Überdehnung nach oben oder unten */
+      var w = revStrainWeight(line, cur);
+      if (w > 0) for (var s in line.strain) if (s !== 'streetPressureX') add(s, line.strain[s] * w);
+      var c = expCutWeight(line, cur);
+      if (c > 0) for (var t in line.cutStrain) if (t !== 'growth') add(t, line.cutStrain[t] * c);
+    });
+    return out;
+  };
+
+  /* Zusätzlicher Protestdruck aus überdehnten Verbrauchsteuern */
+  E.budgetStreetStrain = function (st) {
+    var p = 0;
+    B.REVENUE.forEach(function (line) {
+      if (!line.strain || !line.strain.streetPressureX) return;
+      p += line.strain.streetPressureX * revStrainWeight(line, st.budget.rev[line.k]);
+    });
+    B.SPENDING.forEach(function (line) {
+      p += expCutWeight(line, st.budget.exp[line.k]) * 3.2;
+    });
+    return p;
+  };
+
+  /* Wie stark ist der Haushalt insgesamt überdehnt? Für Warnungen und Ereignisse. */
+  E.budgetStrain = function (st) {
+    var rev = 0, exp = 0, lines = [];
+    B.REVENUE.forEach(function (line) {
+      var w = revStrainWeight(line, st.budget.rev[line.k]);
+      if (w > 0) { rev += w; lines.push({ line: line, kind: 'rev', w: w }); }
+    });
+    B.SPENDING.forEach(function (line) {
+      var c = expCutWeight(line, st.budget.exp[line.k]);
+      if (c > 0) { exp += c; lines.push({ line: line, kind: 'exp', w: c }); }
+    });
+    lines.sort(function (a, b) { return b.w - a.w; });
+    return { rev: rev, exp: exp, total: rev + exp, lines: lines };
+  };
+
+  E.budgetGroupEffects = function (st) {
+    var out = {};
+    var add = function (k, v) { out[k] = (out[k] || 0) + v; };
+    B.REVENUE.concat(B.SPENDING).forEach(function (line) {
+      var cur = (st.budget.rev[line.k] !== undefined) ? st.budget.rev[line.k] : st.budget.exp[line.k];
+      if (cur === undefined) return;
+      var d = cur - line.base;
+      if (line.grp) for (var k in line.grp) add(k, line.grp[k] * d);
+      /* Wer überdehnt oder kaputtspart, verliert die Betroffenen zusätzlich */
+      var w = E.revStrainWeight(line, cur);
+      if (w > 0) for (var g in line.strainGrp) add(g, line.strainGrp[g] * w);
+      var c = E.expCutWeight(line, cur);
+      if (c > 0) for (var h in line.cutGrp) add(h, line.cutGrp[h] * c);
+    });
+    return out;
+  };
+
+  /* ---------------------------------------------------------
+     Wirkung der Kompetenzverteilung
+     --------------------------------------------------------- */
+  E.competenceEffects = function (st) {
+    var out = {};
+    G.COMPETENCES.forEach(function (c) {
+      var lvl = st.competences[c.k];
+      var e = c.eff && c.eff[lvl];
+      if (!e) return;
+      for (var k in e) out[k] = (out[k] || 0) + e[k] * 0.55;
+    });
+    var f = G.TRANSFER_FORMULAS.filter(function (x) { return x.k === st.transferFormula; })[0];
+    if (f && f.eff) for (var k2 in f.eff) out[k2] = (out[k2] || 0) + f.eff[k2];
+    return out;
+  };
+
+  /* ---------------------------------------------------------
+     Indikatoren neu berechnen (Bestandsgrößen)
+     --------------------------------------------------------- */
+  /* Abnehmende Erträge auf Indexskalen von 0 bis 100.
+     Zehn Maßnahmen im selben Feld bringen nicht das Zehnfache der ersten:
+     Verwaltung, Personal und Aufmerksamkeit sind begrenzt. Ohne diese
+     Dämpfung ließe sich etwa der Korruptionsindex auf 100 treiben. */
+  var SAT_FROM = 22, SAT_SLOPE = 0.5;
+  function saturate(x) {
+    if (x > SAT_FROM) return SAT_FROM + (x - SAT_FROM) * SAT_SLOPE;
+    if (x < -SAT_FROM) return -SAT_FROM + (x + SAT_FROM) * SAT_SLOPE;
+    return x;
+  }
+
+  E.recomputeIndex = function (st) {
+    var be = E.budgetEffects(st);
+    var ce = E.competenceEffects(st);
+    st._be = be; st._ce = ce;
+
+    M.INDICATORS.forEach(function (meta) {
+      var k = meta.k;
+      if (FLOW[k]) return;
+      var shift = (st.mods[k] || 0) + (st.drift[k] || 0) + (be[k] || 0) + (ce[k] || 0);
+      /* Nur auf den 0-bis-100-Indizes dämpfen, nicht auf Prozentwerten,
+         Devisenreserven oder Wechselkursen. */
+      if (meta.fmt === 'idx' && meta.min === 0 && meta.max === 100) shift = saturate(shift);
+      st.ind[k] = U.clamp((B.INDICATORS[k] || 0) + shift, meta.min, meta.max);
+    });
+  };
+
+  /* ---------------------------------------------------------
+     Modifikatoren anwenden
+     --------------------------------------------------------- */
+  E.applyMods = function (st, eff, scale) {
+    if (!eff) return;
+    scale = (scale === undefined) ? 1 : scale;
+    for (var k in eff) {
+      var v = eff[k] * scale;
+      if (!isFinite(v)) continue;
+      if (k === 'debtGdpOneOff') { st.debt += st.gdpN * v / 100; continue; }
+      if (!M.IND_BY_KEY[k]) continue;           /* unbekannte Schlüssel ignorieren */
+      st.mods[k] = (st.mods[k] || 0) + v;
+    }
+  };
+
+  E.applyGroups = function (st, grp, scale) {
+    if (!grp) return;
+    scale = (scale === undefined) ? 1 : scale;
+    for (var k in grp) {
+      if (!M.GROUP_BY_KEY[k]) continue;
+      st.approval[k] = U.clamp((st.approval[k] || 50) + grp[k] * scale, 0, 100);
+    }
+  };
+
+  /* ---------------------------------------------------------
+     Maßnahmen: Prüfung, Beschluss, Rücknahme
+     --------------------------------------------------------- */
+  E.status = function (st, p) {
+    if (st.enacted[p.id]) {
+      var rec = st.enacted[p.id];
+      return rec.active ? 'enacted' : 'pending';
+    }
+    return 'open';
+  };
+
+  E.canEnact = function (st, p) {
+    if (st.enacted[p.id]) return { ok: false, why: 'Bereits beschlossen.' };
+    if (st.gameOver) return { ok: false, why: 'Amtszeit beendet.' };
+
+    var need = M.NEEDS[p.need] || M.NEEDS.simple;
+    var seatsNeeded = need.seats;
+    if (p.need === 'exec' && st.presidentialPower < 60) seatsNeeded = 113;
+    if (seatsNeeded > 0 && st.seatsGov < seatsNeeded) {
+      return { ok: false, why: 'Keine Mehrheit: ' + st.seatsGov + ' von ' + seatsNeeded + ' benötigten Sitzen.' };
+    }
+    var cost = E.pcCost(st, p);
+    if (st.pc < cost) return { ok: false, why: 'Politisches Kapital reicht nicht (' + Math.round(cost) + ' nötig).' };
+
+    if (p.excl) {
+      for (var i = 0; i < p.excl.length; i++) {
+        if (st.enacted[p.excl[i]]) {
+          var other = E.byId(p.excl[i]);
+          return { ok: false, why: 'Unvereinbar mit „' + (other ? other.title : p.excl[i]) + '“.' };
+        }
+      }
+    }
+    if (p.req) {
+      for (var j = 0; j < p.req.length; j++) {
+        if (!st.enacted[p.req[j]]) {
+          var r = E.byId(p.req[j]);
+          return { ok: false, why: 'Setzt voraus: „' + (r ? r.title : p.req[j]) + '“.' };
+        }
+      }
+    }
+    return { ok: true };
+  };
+
+  E.pcCost = function (st, p) {
+    var f = 1;
+    if (st.presidentialPower < 100) f += (100 - st.presidentialPower) / 110;
+    if (st.approvalOverall < 40) f += (40 - st.approvalOverall) / 90;
+    f *= SL.data.risks.costMul(st, p);   /* offene strukturelle Hindernisse verteuern */
+    return Math.round((p.pc || 0) * f);
+  };
+
+  /* Anteil der Wirkung, der bei offenen Hindernissen tatsächlich ankommt */
+  E.riskFactor = function (st, p) { return SL.data.risks.factor(st, p); };
+
+  /* Zustimmung zu einer Volksabstimmung schätzen */
+  E.referendumSupport = function (st, p) {
+    var yes = 0, tot = 0;
+    M.GROUPS.forEach(function (g) {
+      if (!g.w) return;
+      var lean = (p.grp && p.grp[g.k]) ? p.grp[g.k] : 0;
+      var v = st.approval[g.k] + lean * 1.5;
+      yes += g.w * v; tot += g.w;
+    });
+    var base = yes / tot;
+    base -= (st.ind.sinhalaPress - 46) * 0.25;
+    return U.clamp(base, 2, 98);
+  };
+
+  E.enact = function (st, p) {
+    var chk = E.canEnact(st, p);
+    if (!chk.ok) return { ok: false, why: chk.why };
+
+    var cost = E.pcCost(st, p);
+    st.pc -= cost;
+
+    /* Volksabstimmung */
+    if (p.need === 'referendum') {
+      var support = E.referendumSupport(st, p);
+      var roll = E.rand(st) * 100;
+      if (roll > support) {
+        st.approvalOverall -= 3;
+        M.GROUPS.forEach(function (g) { st.approval[g.k] = U.clamp(st.approval[g.k] - 2.5, 0, 100); });
+        st.mods.legitimacy = (st.mods.legitimacy || 0) - 5;
+        St.log(st, 'bad', 'Volksabstimmung über „' + p.title + '“ gescheitert: ' +
+          U.n0(support) + ' % geschätzte Zustimmung, das Ergebnis fiel dagegen aus.');
+        return { ok: false, why: 'Die Volksabstimmung ist gescheitert.', referendum: { passed: false, support: support } };
+      }
+      St.log(st, 'good', 'Volksabstimmung über „' + p.title + '“ angenommen (' + U.n0(support) + ' % Zustimmung).');
+    }
+
+    var lag = Math.max(1, p.lag || 1);
+    st.enacted[p.id] = { turn: st.turn, active: false, lag: lag, left: lag, applied: 0 };
+    if (p.oneoff) st.oneoffQueue = (st.oneoffQueue || 0) + p.oneoff;
+
+    /* Sofortige Sonderwirkungen */
+    E.special(st, p);
+
+    St.log(st, 'info', 'Beschlossen: ' + p.title + ' (' + (M.NEEDS[p.need] || M.NEEDS.simple).label + ', ' + cost + ' PK).');
+    return { ok: true, cost: cost };
+  };
+
+  E.repeal = function (st, id) {
+    var rec = st.enacted[id];
+    if (!rec) return false;
+    var p = E.byId(id);
+    var done = (typeof rec.applied === 'number') ? rec.applied : (rec.lag - rec.left) / rec.lag;
+    if (p) {
+      E.applyMods(st, p.eff, -done);
+      E.applyGroups(st, p.grp, -done * 0.6);
+    }
+    delete st.enacted[id];
+    st.repealed[id] = st.turn;
+    st.pc -= Math.round((p ? p.pc : 10) * 0.4);
+    St.log(st, 'warn', 'Zurückgenommen: ' + (p ? p.title : id) + '.');
+    return true;
+  };
+
+  /* Besondere Wirkungen einzelner Maßnahmen */
+  E.special = function (st, p) {
+    switch (p.special) {
+      case 'presidential_power_down':
+        st.presidentialPower = 45;
+        St.log(st, 'warn', 'Die Exekutivgewalt des Präsidenten ist beschnitten. Jede weitere Maßnahme kostet mehr politisches Kapital.');
+        break;
+      case 'presidential_power_up':
+        st.presidentialPower = 135;
+        st.streetPressure += 12;
+        break;
+      case 'anti_defection':
+        st.flags.antiDefection = true;
+        break;
+      case 'constitution_process':
+        st.flags.constitution = true;
+        break;
+      case 'pc_elections':
+        st.flags.pcElections = true;
+        st.eventQueue.push('ev_pc_election_result');
+        break;
+      case 'devolution_referendum':
+        st.flags.devolutionReferendum = true;
+        break;
+    }
+  };
+
+  /* ---------------------------------------------------------
+     Zufall
+     --------------------------------------------------------- */
+  E.rand = function (st) {
+    st.seed = (st.seed * 1103515245 + 12345) & 0x7fffffff;
+    return st.seed / 0x7fffffff;
+  };
+
+  /* ---------------------------------------------------------
+     Zustimmung
+     --------------------------------------------------------- */
+  var SENS = {
+    sinhalaRural: { inflation: -1.00, poverty: -0.80, socialProt: 0.45, agriProd: 0.35, foodSec: 0.35, infra: 0.25, growth: 0.55 },
+    sinhalaUrban: { inflation: -0.80, growth: 0.80, privateSector: 0.45, infra: 0.35, corruption: 0.45, digitalGov: 0.25, unemp: -0.5 },
+    sangha: { sinhalaPress: -0.85, religFree: -0.25, internalSec: 0.30, legitimacy: 0.25 },
+    tamilNE: { trustTamil: 1.30, reconcile: 0.55, langAccess: 0.35, regionalBalance: 0.25, poverty: -0.30 },
+    malaiyaha: { trustHill: 1.30, casteEquity: 0.45, poverty: -0.55, housing: 0.40, health: 0.20 },
+    muslim: { trustMuslim: 1.30, religFree: 0.55, internalSec: 0.30, ruleOfLaw: 0.25 },
+    christian: { religFree: 0.85, ruleOfLaw: 0.50, internalSec: 0.30, legitimacy: 0.25 },
+    youth: { youthUnemp: -0.85, brainDrain: -0.45, corruption: 0.65, pressFree: 0.40, education: 0.30, digitalGov: 0.25 },
+    publicSector: { inflation: -0.70, stateCap: 0.30, legitimacy: 0.20 },
+    business: { privateSector: 0.85, corruption: 0.45, energyRel: 0.40, ruleOfLaw: 0.40, growth: 0.55 },
+    farmers: { agriProd: 0.85, foodSec: 0.40, inflation: -0.45, climateRes: 0.30, poverty: -0.35 },
+    unions: { inflation: -0.85, socialProt: 0.50, unemp: -0.55, pressFree: 0.25 },
+    military: { militaryMor: 1.20, militaryCap: 0.40, veteran: 0.40, internalSec: 0.25 },
+    diaspora: { diaspora: 1.10, reconcile: 0.50, trustTamil: 0.40, pressFree: 0.25 },
+    intl: { imfCompl: 1.10, corruption: 0.45, debtGdp: -0.40, relWest: 0.20, privateSector: 0.25 }
+  };
+
+  E.updateApproval = function (st) {
+    var bge = E.budgetGroupEffects(st);
+    M.GROUPS.forEach(function (g) {
+      var s = SENS[g.k] || {};
+      var delta = 0;
+      for (var k in s) {
+        var base = B.INDICATORS[k];
+        if (base === undefined) continue;
+        delta += s[k] * (st.ind[k] - base);
+      }
+      delta *= 0.045;                                    /* Dämpfung je Quartal */
+      delta += (bge[g.k] || 0) * 0.018;                  /* Haushaltsentscheidungen */
+      delta += (50 - st.approval[g.k]) * 0.012;          /* schwache Rückkehr zur Mitte */
+      delta -= 0.38;                                     /* Amtsmüdigkeit: Regierungen nutzen sich ab */
+      st.approval[g.k] = U.clamp(st.approval[g.k] + delta, 2, 98);
+    });
+
+    var num = 0, den = 0;
+    M.GROUPS.forEach(function (g) { if (!g.w) return; num += g.w * st.approval[g.k]; den += g.w; });
+    st.approvalOverall = num / den;
+  };
+
+  E.updateStreet = function (st) {
+    var i = st.ind;
+    var target = 24
+      + 1.7 * (i.inflation - 6.5)
+      + 0.9 * (i.poverty - 23.8)
+      + 0.55 * (i.youthUnemp - 18.7)
+      + 0.62 * (50 - st.approvalOverall)
+      - 0.30 * (i.socialProt - 44)
+      - 0.22 * (i.legitimacy - 48)
+      + 0.25 * (i.sinhalaPress - 46)
+      + E.budgetStreetStrain(st);
+    target = U.clamp(target, 6, 100);
+    /* Wut baut sich schnell auf und nur langsam ab */
+    var speed = target > st.streetPressure ? 0.45 : 0.16;
+    st.streetPressure = U.clamp(st.streetPressure + (target - st.streetPressure) * speed, 0, 100);
+  };
+
+  /* ---------------------------------------------------------
+     Ein Quartal weiterrechnen
+     --------------------------------------------------------- */
+  E.nextTurn = function (st) {
+    if (st.gameOver) return { gameOver: st.gameOver };
+    var res = { messages: [], event: null };
+
+    /* 1. Umsetzungsfortschritt beschlossener Maßnahmen */
+    for (var id in st.enacted) {
+      var rec = st.enacted[id];
+      if (rec.active) continue;
+      var p = E.byId(id);
+      if (!p) { rec.active = true; continue; }
+      /* Offene strukturelle Hindernisse lassen nur einen Teil der Wirkung durch.
+         Wer sie zwischendurch beseitigt, holt den Rest ab dem nächsten Quartal. */
+      var rf = E.riskFactor(st, p);
+      E.applyMods(st, p.eff, rf / rec.lag);
+      E.applyGroups(st, p.grp, 0.6 / rec.lag);
+      rec.applied = (rec.applied || 0) + rf / rec.lag;
+      rec.left--;
+      if (rec.left <= 0) {
+        rec.active = true;
+        var open = SL.data.risks.openFor(st, p);
+        if (open.length) {
+          St.log(st, 'warn', 'Umgesetzt, aber wirkungsarm: ' + p.title + '. Es fehlt weiterhin die Voraussetzung: '
+            + open.map(function (r) { return r.short; }).join(', ') + '.');
+        } else {
+          St.log(st, 'good', 'Vollständig umgesetzt: ' + p.title + '.');
+        }
+      }
+    }
+
+    /* 1b. Beseitigte Hindernisse melden */
+    st.riskSolved = st.riskSolved || {};
+    SL.data.risks.RISKS.forEach(function (r) {
+      var now = SL.data.risks.solved(st, r.k);
+      if (now && !st.riskSolved[r.k]) {
+        st.riskSolved[r.k] = true;
+        var freed = E.all().filter(function (q) {
+          return (q.risks || []).indexOf(r.k) >= 0 && st.enacted[q.id];
+        }).length;
+        St.log(st, 'good', 'Hindernis beseitigt: ' + r.label + '.'
+          + (freed ? ' ' + freed + ' bereits beschlossene Maßnahmen wirken ab jetzt stärker.' : ''));
+        res.messages.push({ kind: 'good', title: 'Hindernis beseitigt', text: r.label + '.' });
+      } else if (!now) {
+        st.riskSolved[r.k] = false;
+      }
+    });
+
+    /* 2. Natürliche Entwicklung ohne Zutun */
+    E.naturalDrift(st);
+
+    /* 3. Bestandsindikatoren */
+    E.recomputeIndex(st);
+
+    /* 4. Haushalt und Schuldendynamik */
+    var bud = E.budget(st);
+    var oneoff = st.oneoffQueue || 0; st.oneoffQueue = 0;
+    var balanceQ = bud.balance / 4 - oneoff;
+
+    /* 5. Wachstum */
+    var capexPct = (st.budget.exp.capital + st.budget.exp.ditwah) * E.scale(st) / st.gdpN * 100;
+    var i = st.ind;
+    var g = 2.6
+      + 0.20 * (capexPct - 2.03)
+      + 0.38 * (i.fdi - 1.3)
+      + 0.028 * (i.privateSector - 38)
+      + 0.018 * (i.stateCap - 41)
+      + 0.014 * (i.corruption - 35)
+      + 0.013 * (i.infra - 44)
+      + 0.012 * (i.skillsMatch - 31)
+      + 0.010 * (i.energyRel - 52)
+      + 0.009 * (i.education - 55)
+      + 0.008 * (i.agriProd - 38)
+      + 0.018 * (i.femaleLFP - 31.4)
+      + 0.013 * (i.regionalBalance - 30)
+      - 0.055 * Math.max(0, i.inflation - 8)
+      - 0.035 * Math.max(0, i.debtGdp - 100)
+      - 0.045 * Math.max(0, st.streetPressure - 45)
+      - 0.030 * Math.max(0, i.brainDrain - 68)
+      - (st.imf.programActive ? 0 : 0.9)
+      + (st.mods.growth || 0)
+      + (st.shockGrowth || 0);
+    /* Abnehmende Erträge: über 4,5 % wird jeder weitere Punkt teuer erkauft */
+    if (g > 4.5) g = 4.5 + (g - 4.5) * 0.42;
+    st.shockGrowth = (st.shockGrowth || 0) * 0.5;
+    i.growth = U.clamp(i.growth + (g - i.growth) * 0.5, -9, 9);
+
+    /* 6. Wechselkurs und Reserven */
+    var trancheThisTurn = st._tranche || 0; st._tranche = 0;
+    var dRes = 0.25 * (
+      0.35 * (i.exports - 13.6)
+      + 0.50 * (i.remittances - 7.4)
+      + 0.80 * (i.tourism - 2.6)
+      + 0.90 * (i.fdi - 1.3)
+      - 0.15 * Math.max(0, i.growth - 3)
+    ) + 0.05 + trancheThisTurn + (st.mods.reserves || 0) * 0.12
+      - (st.imf.programActive ? 0 : 0.32);
+    i.reserves = U.clamp(i.reserves + dRes, 0, 20);
+
+    var dFx = Math.max(0, (5.5 - i.reserves)) * 3.2
+      + (i.inflation - 3) * 0.55
+      - (i.fdi - 1.3) * 2.0
+      + (st.mods.fx || 0) * 0.1;
+    dFx = U.clamp(dFx, -12, 45);
+    i.fx = U.clamp(i.fx + dFx, 150, 900);
+
+    /* 7. Inflation */
+    var deficitPct = -bud.balancePct;
+    var infl = 3.5
+      + 0.40 * deficitPct
+      + 0.09 * (dFx / i.fx * 400)
+      - 0.025 * (i.agriProd - 38)
+      - 0.018 * (i.foodSec - 52)
+      + (st.mods.inflation || 0)
+      + (st.shockInfl || 0);
+    st.shockInfl = (st.shockInfl || 0) * 0.5;
+    i.inflation = U.clamp(i.inflation + (infl - i.inflation) * 0.5, -3, 60);
+
+    /* 8. Schulden */
+    st.debt += -balanceQ;
+    st.debt += st.foreignDebtShare * st.debt * (dFx / i.fx);
+    st.gdpN *= (1 + (i.growth + i.inflation) / 400);
+    i.debtGdp = U.clamp(st.debt / st.gdpN * 100, 20, 200);
+
+    /* 9. Arbeitsmarkt und Armut */
+    var unempT = 4.1 - 0.25 * (i.growth - 3) - 0.018 * (i.privateSector - 38)
+      - 0.010 * (i.skillsMatch - 31) + (st.mods.unemp || 0);
+    i.unemp = U.clamp(i.unemp + (unempT - i.unemp) * 0.3, 1, 20);
+
+    var yT = 18.7 + 3.2 * (i.unemp - 4.1) - 0.11 * (i.skillsMatch - 31)
+      - 0.06 * (i.education - 55) + (st.mods.youthUnemp || 0);
+    i.youthUnemp = U.clamp(i.youthUnemp + (yT - i.youthUnemp) * 0.3, 3, 48);
+
+    st.prosperity = (st.prosperity || 100) * (1 + (i.growth - 0.6) / 400);
+    var povT = 23.8
+      - 0.32 * (st.prosperity - 100)
+      - 0.070 * (i.socialProt - 44)
+      + 0.40 * (i.inflation - 6.5)
+      + 0.60 * (i.unemp - 4.1)
+      + (st.mods.poverty || 0);
+    i.poverty = U.clamp(i.poverty + (povT - i.poverty) * 0.26, 2, 60);
+
+    /* 10. Gesellschaft */
+    E.updateApproval(st);
+    E.updateStreet(st);
+    St.recomputeProvinces(st);
+
+    /* 11. Politisches Kapital */
+    var gain = 12 + (st.approvalOverall - 50) * 0.35 + (st.seatsGov - 113) * 0.06;
+    gain *= (st.presidentialPower / 100);
+    gain -= Math.max(0, st.streetPressure - 60) * 0.12;
+    st.pc = U.clamp(st.pc + Math.max(2, gain), 0, 220);
+
+    /* 12. Fraktionsdisziplin */
+    E.checkDefections(st, res);
+
+    /* 13. Zeit weiterschalten */
+    var n = U.nextQ(st.year, st.q);
+    st.year = n.year; st.q = n.q; st.turn++;
+
+    /* 14. IWF-Überprüfung */
+    E.imfReview(st, bud, res);
+
+    /* 15. Krisen und Spielende */
+    E.checkCrisis(st, res);
+
+    St.snapshot(st);
+
+    /* 16. Ereignis auswählen */
+    if (!st.gameOver) st.pendingEvent = E.pickEvent(st);
+    res.event = st.pendingEvent;
+    return res;
+  };
+
+  /* ---------------------------------------------------------
+     Natürliche Entwicklung
+     --------------------------------------------------------- */
+  E.naturalDrift = function (st) {
+    var d = st.drift;
+    var add = function (k, v) { d[k] = (d[k] || 0) + v; };
+
+    /* Ohne Gegensteuern verschlechtern sich einige Bereiche */
+    add('infra', -0.45);
+    add('soeHealth', -0.40);
+    add('brainDrain', st.ind.youthUnemp > 15 ? 0.55 : -0.25);
+    add('climateRes', -0.30);
+    add('forest', -0.05);
+    add('malnutrition', st.ind.poverty > 22 ? 0.30 : -0.30);
+    add('stateCap', -0.18);          /* Verwaltung verliert ohne Pflege an Substanz */
+    add('corruption', -0.16);        /* Netzwerke bilden sich immer neu */
+    add('legitimacy', -0.22);
+    add('skillsMatch', -0.12);
+    add('agriProd', -0.12);
+
+    /* Nationalistischer Druck baut sich ab, wenn nichts passiert */
+    var sp = (st.mods.sinhalaPress || 0);
+    if (sp > 0) st.mods.sinhalaPress = sp * 0.94;
+
+    /* Vertrauen erodiert, wenn keine sichtbaren Fortschritte kommen */
+    if (!st.flags.pcElections) add('trustTamil', -0.18);
+    if (st.streetPressure > 60) add('legitimacy', -0.5);
+    if (st.approvalOverall > 55) add('legitimacy', 0.25);
+  };
+
+  /* ---------------------------------------------------------
+     Fraktionsdisziplin
+     --------------------------------------------------------- */
+  E.checkDefections = function (st, res) {
+    if (st.flags.antiDefection) return;
+    var risk = 0;
+    if (st.approvalOverall < 42) risk += (42 - st.approvalOverall) * 0.9;
+    if (st.ind.sinhalaPress > 62) risk += (st.ind.sinhalaPress - 62) * 0.8;
+    if (st.streetPressure > 65) risk += (st.streetPressure - 65) * 0.5;
+    if (risk <= 0) return;
+    if (E.rand(st) * 100 < risk) {
+      var lost = 1 + Math.floor(E.rand(st) * 5);
+      st.seatsGov = Math.max(0, st.seatsGov - lost);
+      St.log(st, 'bad', lost + ' Abgeordnete verlassen die Regierungsfraktion. Mehrheit jetzt ' + st.seatsGov + ' von 225.');
+      res.messages.push({ kind: 'bad', title: 'Fraktion', text: lost + ' Abgeordnete sind übergelaufen.' });
+    }
+  };
+
+  /* ---------------------------------------------------------
+     IWF-Überprüfung
+     --------------------------------------------------------- */
+  E.imfReview = function (st, bud, res) {
+    if (!st.imf.programActive) {
+      /* Ohne Programm bricht auch die übrige Geberfinanzierung weg */
+      st.drift.imfCompl = (st.drift.imfCompl || 0) - 1.0;
+      return;
+    }
+    if (st.turn < st.imf.nextReviewTurn) return;
+    st.imf.nextReviewTurn = st.turn + 2;
+
+    var target = E.primaryTarget(st);
+    var okPrimary = bud.primaryPct >= target - 0.45;
+    var okRevenue = bud.revPct >= B.IMF.revenueFloor - 0.6;
+    var okCompliance = st.ind.imfCompl >= 45;
+
+    if (okPrimary && okRevenue && okCompliance) {
+      st.imf.reviewsPassed++;
+      st._tranche = B.IMF.trancheSize;
+      st.mods.imfCompl = (st.mods.imfCompl || 0) + 3;
+      St.log(st, 'good', 'IWF-Überprüfung bestanden. Tranche von ' + U.n2(B.IMF.trancheSize) + ' Mrd. USD freigegeben.');
+      res.messages.push({ kind: 'good', title: 'IWF', text: 'Überprüfung bestanden, Tranche freigegeben.' });
+    } else {
+      st.imf.reviewsFailed++;
+      st.mods.imfCompl = (st.mods.imfCompl || 0) - 12;
+      st.mods.fdi = (st.mods.fdi || 0) - 0.12;
+      var why = [];
+      if (!okPrimary) why.push('Primärsaldo ' + U.n1(bud.primaryPct) + ' % statt ' + U.n1(target) + ' %');
+      if (!okRevenue) why.push('Einnahmen ' + U.n1(bud.revPct) + ' % statt ' + U.n1(B.IMF.revenueFloor) + ' %');
+      if (!okCompliance) why.push('Programmtreue unzureichend');
+      St.log(st, 'bad', 'IWF-Überprüfung nicht bestanden: ' + why.join(', ') + '.');
+      res.messages.push({ kind: 'bad', title: 'IWF', text: 'Überprüfung gescheitert: ' + why.join(', ') + '.' });
+      if (st.imf.reviewsFailed >= 3 && st.imf.programActive) {
+        st.imf.programActive = false;
+        st.mods.imfCompl = (st.mods.imfCompl || 0) - 25;
+        st.mods.fdi = (st.mods.fdi || 0) - 0.5;
+        st.mods.privateSector = (st.mods.privateSector || 0) - 8;
+        st.shockGrowth = (st.shockGrowth || 0) - 2.2;
+        st.effRate += 0.02;
+        st.ind.reserves = Math.max(0, st.ind.reserves - 0.9);
+        St.log(st, 'bad', 'Das IWF-Programm ist ausgesetzt. Weltbank, Asiatische Entwicklungsbank und bilaterale Geber frieren Auszahlungen ein, die Refinanzierungskosten steigen.');
+        res.messages.push({ kind: 'bad', title: 'Programm ausgesetzt', text: 'Der IWF stoppt das Programm. Andere Geber ziehen nach.' });
+      }
+    }
+  };
+
+  /* ---------------------------------------------------------
+     Krisen und Spielende
+     --------------------------------------------------------- */
+  E.checkCrisis = function (st, res) {
+    var i = st.ind;
+
+    if (i.reserves < 0.8) {
+      st.gameOver = { kind: 'default', title: 'Zahlungsunfähigkeit',
+        text: 'Die Devisenreserven sind aufgebraucht. Treibstoff, Medikamente und Gas können nicht mehr importiert werden. Sri Lanka steht erneut dort, wo es 2022 stand.' };
+      return;
+    }
+    if (st.streetPressure > 88) {
+      st.crisisCount++;
+      if (st.crisisCount >= 2) {
+        st.gameOver = { kind: 'uprising', title: 'Rücktritt unter dem Druck der Straße',
+          text: 'Hunderttausende umstellen das Präsidialsekretariat. Wie 2022 wird der Amtssitz besetzt. Sie treten zurück.' };
+        return;
+      }
+      St.log(st, 'bad', 'Die Lage auf der Straße ist außer Kontrolle. Ein weiteres Quartal wie dieses überstehen Sie nicht.');
+      res.messages.push({ kind: 'bad', title: 'Warnung', text: 'Massenproteste eskalieren. Letzte Warnung.' });
+    } else if (st.streetPressure < 70) {
+      st.crisisCount = 0;
+    }
+    if (st.seatsGov < 90 && st.approvalOverall < 32) {
+      st.gameOver = { kind: 'impeach', title: 'Amtsenthebung',
+        text: 'Ohne parlamentarische Basis und ohne Rückhalt in der Bevölkerung setzt das Parlament ein Amtsenthebungsverfahren in Gang. Es endet erfolgreich.' };
+      return;
+    }
+    /* Ende der Amtszeit */
+    if (st.year > B.META.termEndYear || (st.year === B.META.termEndYear && st.q > B.META.termEndQuarter)) {
+      E.election(st);
+    }
+  };
+
+  /* ---------------------------------------------------------
+     Wahl am Ende der Amtszeit
+     --------------------------------------------------------- */
+  E.election = function (st) {
+    var share = 0, tot = 0;
+    M.GROUPS.forEach(function (g) {
+      if (!g.w) return;
+      share += g.w * st.approval[g.k]; tot += g.w;
+    });
+    var vote = share / tot;
+    vote += (st.ind.growth - 3) * 1.2
+      - (st.ind.inflation - 6.5) * 0.6
+      - st.streetPressure * 0.08
+      - 2.5;                                   /* Wechselstimmung nach einer vollen Amtszeit */
+    vote = U.clamp(vote, 5, 95);
+    var won = vote >= 50;
+    st.gameOver = {
+      kind: won ? 'reelected' : 'defeated',
+      title: won ? 'Wiedergewählt' : 'Abgewählt',
+      vote: vote,
+      text: won
+        ? 'Sie gewinnen die Präsidentschaftswahl mit geschätzten ' + U.n1(vote) + ' % und erhalten ein zweites Mandat.'
+        : 'Sie verlieren die Präsidentschaftswahl mit geschätzten ' + U.n1(vote) + ' %. Die Amtszeit endet.'
+    };
+  };
+
+  /* ---------------------------------------------------------
+     Ereignisauswahl
+     --------------------------------------------------------- */
+  E.pickEvent = function (st) {
+    var EV = SL.data.events.EVENTS;
+
+    if (st.eventQueue && st.eventQueue.length) {
+      var qid = st.eventQueue.shift();
+      var qe = SL.data.events.BY_ID[qid];
+      if (qe) return qe;
+    }
+
+    var pool = [];
+    EV.forEach(function (e) {
+      if (e.hidden) return;
+      if (e.minQ && st.turn < e.minQ) return;
+      var seen = st.eventSeen[e.id];
+      if (seen !== undefined) {
+        if (!e.repeatAfter) return;
+        if (st.turn - seen < e.repeatAfter) return;
+      }
+      if (e.cond && !e.cond(st)) return;
+      var w = e.weight || 3;
+      for (var n = 0; n < w; n++) pool.push(e);
+    });
+    if (!pool.length) return null;
+    if (E.rand(st) < 0.18) return null;                  /* manche Quartale bleiben ruhig */
+    var pick = pool[Math.floor(E.rand(st) * pool.length)];
+    st.eventSeen[pick.id] = st.turn;
+    return pick;
+  };
+
+  E.resolveEvent = function (st, ev, optIndex) {
+    var o = ev.options[optIndex];
+    if (!o) return;
+    E.applyMods(st, o.eff, 1);
+    E.applyGroups(st, o.grp, 1);
+    if (o.fiscal) {
+      if (o.fiscal.rev) st.oneoffQueue = (st.oneoffQueue || 0) - o.fiscal.rev;
+      if (o.fiscal.exp) st.oneoffQueue = (st.oneoffQueue || 0) + o.fiscal.exp;
+    }
+    if (o.pc) st.pc = U.clamp(st.pc + o.pc, 0, 220);
+
+    switch (o.special) {
+      case 'calm_street': st.streetPressure = Math.max(0, st.streetPressure - 22); break;
+      case 'calm_street_soft': st.streetPressure = Math.max(0, st.streetPressure - 10); break;
+      case 'crackdown': st.streetPressure = Math.max(0, st.streetPressure - 30); st.drift.pressFree = (st.drift.pressFree || 0) - 4; break;
+      case 'keep_seats': break;
+      case 'lose_seats': st.seatsGov = Math.max(0, st.seatsGov - (4 + Math.floor(E.rand(st) * 7))); break;
+      case 'lose_seats_half': st.seatsGov = Math.max(0, st.seatsGov - (2 + Math.floor(E.rand(st) * 4))); break;
+      case 'warn_only': st.shockGrowth = (st.shockGrowth || 0) - 0.6; st.drift.housing = (st.drift.housing || 0) - 5; break;
+    }
+    E.recomputeIndex(st);
+    St.log(st, 'info', ev.title + ' – Entscheidung: ' + o.t);
+    st.pendingEvent = null;
+  };
+
+  /* ---------------------------------------------------------
+     Bewertung am Ende
+     --------------------------------------------------------- */
+  E.evaluate = function (st) {
+    var i = st.ind;
+    var parts = [
+      { k: 'Wirtschaft', v: score(i.growth, 0, 7) * 0.4 + score(100 - i.debtGdp, -20, 45) * 0.35 + score(i.privateSector, 20, 80) * 0.25 },
+      { k: 'Lebensstandard', v: score(35 - i.poverty, 0, 28) * 0.5 + score(20 - i.inflation, 5, 19) * 0.25 + score(i.socialProt, 20, 85) * 0.25 },
+      { k: 'Arbeit & Zukunft', v: score(35 - i.youthUnemp, 0, 28) * 0.45 + score(i.skillsMatch, 15, 80) * 0.3 + score(100 - i.brainDrain, 20, 80) * 0.25 },
+      { k: 'Staat & Recht', v: score(i.corruption, 20, 70) * 0.4 + score(i.stateCap, 20, 80) * 0.3 + score(i.ruleOfLaw, 20, 80) * 0.3 },
+      { k: 'Zusammenhalt', v: score(i.reconcile, 10, 80) * 0.4 + score(i.trustTamil, 10, 80) * 0.25 + score(i.trustMuslim, 15, 80) * 0.175 + score(i.trustHill, 15, 80) * 0.175 },
+      { k: 'Klima & Vorsorge', v: score(i.climateRes, 10, 80) * 0.4 + score(i.disasterPrep, 15, 85) * 0.3 + score(i.renewables, 25, 85) * 0.3 },
+      { k: 'Region & Ausgleich', v: score(i.regionalBalance, 15, 80) * 0.6 + score(60 - i.inequality, 0, 30) * 0.4 }
+    ];
+    var total = parts.reduce(function (a, p) { return a + p.v; }, 0) / parts.length;
+    return { parts: parts, total: total, grade: grade(total) };
+
+    function score(v, lo, hi) { return U.clamp((v - lo) / (hi - lo) * 100, 0, 100); }
+    function grade(t) {
+      if (t >= 82) return { g: 'A', c: 'var(--green)', t: 'Historische Amtszeit' };
+      if (t >= 70) return { g: 'B', c: 'var(--cy)', t: 'Deutlich besser hinterlassen als vorgefunden' };
+      if (t >= 56) return { g: 'C', c: 'var(--amber)', t: 'Stabilisiert, aber nicht verwandelt' };
+      if (t >= 42) return { g: 'D', c: 'var(--orange)', t: 'Verwaltet statt gestaltet' };
+      return { g: 'E', c: 'var(--red)', t: 'Das Land steht schlechter da als zuvor' };
+    }
+  };
+
+})(SL.engine = SL.engine || {});
