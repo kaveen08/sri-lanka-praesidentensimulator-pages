@@ -399,6 +399,7 @@
     if (p) {
       E.applyMods(st, p.eff, -done);
       E.applyGroups(st, p.grp, -done * 0.6);
+      E.reverseSpecial(st, p);
     }
     delete st.enacted[id];
     st.repealed[id] = st.turn;
@@ -430,6 +431,29 @@
         break;
       case 'devolution_referendum':
         st.flags.devolutionReferendum = true;
+        break;
+      case 'term_limit_removed':
+        st.flags.termLimitRemoved = true;
+        st.termLimit = null;
+        St.log(st, 'warn', 'Die Begrenzung auf zwei Amtszeiten ist aufgehoben. Künftige Wiederkandidaturen sind unbegrenzt möglich.');
+        break;
+      case 'term_limit_two':
+        st.flags.termLimitRemoved = false;
+        st.termLimit = 2;
+        break;
+    }
+  };
+
+  E.reverseSpecial = function (st, p) {
+    switch (p.special) {
+      case 'term_limit_removed':
+        st.flags.termLimitRemoved = false;
+        st.termLimit = 2;
+        St.log(st, 'warn', 'Die Begrenzung auf zwei Amtszeiten gilt wieder.');
+        break;
+      case 'term_limit_two':
+        /* Die Verfassungsgrundlage bleibt ohne Gegenreform bei zwei Perioden. */
+        st.termLimit = st.flags.termLimitRemoved ? null : 2;
         break;
     }
   };
@@ -672,7 +696,7 @@
     St.snapshot(st);
 
     /* 16. Ereignis auswählen */
-    if (!st.gameOver) st.pendingEvent = E.pickEvent(st);
+    if (!st.gameOver && !res.election) st.pendingEvent = E.pickEvent(st);
     res.event = st.pendingEvent;
     return res;
   };
@@ -800,9 +824,11 @@
         text: 'Ohne parlamentarische Basis und ohne Rückhalt in der Bevölkerung setzt das Parlament ein Amtsenthebungsverfahren in Gang. Es endet erfolgreich.' };
       return;
     }
-    /* Ende der Amtszeit */
-    if (st.year > B.META.termEndYear || (st.year === B.META.termEndYear && st.q > B.META.termEndQuarter)) {
-      E.election(st);
+    /* Ende der aktuellen Amtszeit */
+    var endYear = st.termEndYear || B.META.termEndYear;
+    var endQuarter = st.termEndQuarter || B.META.termEndQuarter;
+    if (st.year > endYear || (st.year === endYear && st.q > endQuarter)) {
+      res.election = E.election(st);
     }
   };
 
@@ -810,6 +836,26 @@
      Wahl am Ende der Amtszeit
      --------------------------------------------------------- */
   E.election = function (st) {
+    st.termNumber = st.termNumber || 1;
+    st.electionHistory = st.electionHistory || [];
+    if (st.termLimit === undefined) st.termLimit = 2;
+    var electionYear = st.termEndYear || st.year;
+
+    if (st.termLimit !== null && st.termNumber >= st.termLimit) {
+      var limited = {
+        eligible: false, won: false, kind: 'term-limited',
+        title: 'Amtszeitlimit erreicht', term: st.termNumber,
+        text: 'Nach ' + st.termNumber + ' Amtszeiten dürfen Sie nicht erneut kandidieren. ' +
+          'Die Amtszeit endet. Für eine weitere Kandidatur hätte die Begrenzung vorher aufgehoben werden müssen.'
+      };
+      st.electionHistory.push({
+        year: electionYear, term: st.termNumber, eligible: false, won: false, vote: null
+      });
+      st.gameOver = limited;
+      st.lastElection = limited;
+      return limited;
+    }
+
     var share = 0, tot = 0;
     M.GROUPS.forEach(function (g) {
       if (!g.w) return;
@@ -819,17 +865,53 @@
     vote += (st.ind.growth - 3) * 1.2
       - (st.ind.inflation - 6.5) * 0.6
       - st.streetPressure * 0.08
-      - 2.5;                                   /* Wechselstimmung nach einer vollen Amtszeit */
+      - 2.5
+      - Math.min(8, Math.max(0, st.termNumber - 1) * 1.25); /* Langzeitmalus bleibt überwindbar */
     vote = U.clamp(vote, 5, 95);
     var won = vote >= 50;
-    st.gameOver = {
+    var nextTerm = st.termNumber + 1;
+    var result = {
+      eligible: true, won: won,
       kind: won ? 'reelected' : 'defeated',
-      title: won ? 'Wiedergewählt' : 'Abgewählt',
-      vote: vote,
+      title: won ? 'Wiedergewählt' : 'Abgewählt', vote: vote,
+      term: st.termNumber, wonTerm: won ? nextTerm : null,
       text: won
-        ? 'Sie gewinnen die Präsidentschaftswahl mit geschätzten ' + U.n1(vote) + ' % und erhalten ein zweites Mandat.'
-        : 'Sie verlieren die Präsidentschaftswahl mit geschätzten ' + U.n1(vote) + ' %. Die Amtszeit endet.'
+        ? 'Sie gewinnen die Präsidentschaftswahl mit geschätzten ' + U.n1(vote) +
+          ' % und beginnen Ihre ' + nextTerm + '. Amtszeit.'
+        : 'Sie verlieren die Präsidentschaftswahl mit geschätzten ' + U.n1(vote) + ' %. Ihre Regierungszeit endet.'
     };
+    st.electionHistory.push({
+      year: electionYear, term: st.termNumber, wonTerm: won ? nextTerm : null,
+      eligible: true, won: won, vote: vote
+    });
+    st.lastElection = result;
+
+    if (!won) {
+      st.gameOver = result;
+      return result;
+    }
+
+    st.termNumber = nextTerm;
+    st.electionsWon = (st.electionsWon || 0) + 1;
+    st.termStartYear = st.year;
+    st.termStartQuarter = st.q;
+    /* Eine volle Amtszeit umfasst 20 Quartale einschließlich des Startquartals. */
+    var endIndex = st.year * 4 + (st.q - 1) + 19;
+    st.termEndYear = Math.floor(endIndex / 4);
+    st.termEndQuarter = (endIndex % 4) + 1;
+    st.gameOver = null;
+    st.pendingEvent = null;
+    st.crisisCount = 0;
+    st.pc = U.clamp(st.pc + 28, 0, 220);
+    st.streetPressure = U.clamp(st.streetPressure * 0.72, 0, 100);
+    st.mods.legitimacy = (st.mods.legitimacy || 0) + 3;
+    var bump = U.clamp(2 + (vote - 50) * 0.18, 2, 6);
+    M.GROUPS.forEach(function (g) {
+      st.approval[g.k] = U.clamp(st.approval[g.k] + bump, 0, 100);
+    });
+    St.log(st, 'good', 'Präsidentschaftswahl gewonnen: ' + U.n1(vote) + ' %. Beginn der ' +
+      st.termNumber + '. Amtszeit; nächste reguläre Wahl ' + st.termEndYear + '.');
+    return result;
   };
 
   /* ---------------------------------------------------------

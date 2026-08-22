@@ -199,6 +199,9 @@
         'Wird jedes Quartal neu zugeteilt und für Maßnahmen ausgegeben'),
       stat('Sitze', st.seatsGov + '/225', null, st.seatsGov >= 150 ? 'var(--green)' : (st.seatsGov >= 113 ? 'var(--amber)' : 'var(--red)'),
         'Ab 113 einfache, ab 150 Zweidrittelmehrheit'),
+      stat('Amtszeit', (st.termNumber || 1) + '/' + (st.termLimit === null ? '∞' : (st.termLimit || 2)), null,
+        st.termLimit === null ? 'var(--amber)' : 'var(--cy-bright)',
+        'Nächste reguläre Wahl: Ende ' + (st.termEndYear || SL.data.baseline.META.termEndYear)),
       el('div', { class: 'hsep' }),
       stat('Wachstum', U.n1(i.growth) + ' %', null, i.growth >= 3 ? 'var(--green)' : 'var(--amber)'),
       stat('Inflation', U.n1(i.inflation) + ' %', null, i.inflation <= 7 ? 'var(--green)' : 'var(--red)'),
@@ -270,6 +273,7 @@
     A.render();
     (res.messages || []).forEach(function (m) { X.toast(m.kind, m.title, m.text); });
     if (st.gameOver) { A.go('report'); showGameOver(); return; }
+    if (res.election && res.election.won) { showElection(res.election); return; }
     if (res.event) showEvent();
   }
 
@@ -303,7 +307,7 @@
     var go = st.gameOver;
     var ev = E.evaluate(st);
     X.modal({
-      title: go.title, tag: 'AMTSZEIT BEENDET', tagCls: go.kind === 'reelected' ? 'green' : 'red', sticky: true,
+      title: go.title, tag: 'REGIERUNGSZEIT BEENDET', tagCls: 'red', sticky: true,
       body: el('div', { class: 'col gap12' }, [
         el('div', { style: { fontSize: '13px', lineHeight: '1.7' }, text: go.text }),
         el('div', { class: 'row gap16 center' }, [
@@ -318,8 +322,31 @@
       actions: function (close) {
         return [
           el('button', { class: 'ghost', text: 'Bericht ansehen', onclick: close }),
-          el('button', { class: 'primary', text: 'Neue Amtszeit', onclick: function () { St.clearSave(); location.reload(); } })
+          el('button', { class: 'primary', text: 'Neue Karriere', onclick: function () { St.clearSave(); location.reload(); } })
         ];
+      }
+    });
+  }
+
+  function showElection(result) {
+    X.modal({
+      title: result.title, tag: 'WAHLSIEG', tagCls: 'green', sticky: true,
+      body: el('div', { class: 'col gap12' }, [
+        el('div', { style: { fontSize: '13px', lineHeight: '1.7' }, text: result.text }),
+        el('div', { class: 'row gap16 center' }, [
+          el('div', { class: 'report-grade', style: { color: 'var(--green)' }, text: U.n1(result.vote) + '%' }),
+          el('div', { class: 'col' }, [
+            el('div', { class: 'hud-label', text: 'Neue Amtszeit' }),
+            el('div', { class: 'mono', style: { fontSize: '18px', color: 'var(--cy-bright)' }, text: st.termNumber + '. Mandat' }),
+            el('div', { class: 'small muted', text: 'Nächste reguläre Wahl Ende ' + st.termEndYear })
+          ])
+        ]),
+        st.termLimit === null
+          ? X.note('Die Amtszeitbegrenzung ist aufgehoben. Sie dürfen auch danach wieder kandidieren.', 'warn')
+          : X.note('Es gilt weiterhin die Begrenzung auf ' + st.termLimit + ' Amtszeiten.')
+      ]),
+      actions: function (close) {
+        return [el('button', { class: 'primary', text: 'Weiterregieren', onclick: close })];
       }
     });
   }
@@ -381,7 +408,8 @@
               el('li', { text: 'Leere Devisenreserven: erneute Zahlungsunfähigkeit.' }),
               el('li', { text: 'Druck der Straße über 88: Rücktritt wie 2022.' }),
               el('li', { text: 'Verlust der Mehrheit und der Zustimmung: Amtsenthebung.' }),
-              el('li', { text: 'Und ganz normal: die Wahl im Herbst 2029.' })
+              el('li', { text: 'Regelmäßige Präsidentschaftswahlen: Verlieren Sie, endet Ihre Regierungszeit.' }),
+              el('li', { text: 'Nach zwei Amtszeiten greift die Begrenzung, solange Sie sie nicht verfassungsrechtlich aufgehoben haben.' })
             ])
           ])
         ]),
@@ -398,7 +426,7 @@
   function renderStartScreen(available) {
     var saved = available.state;
     X.modal({
-      title: 'Sri Lanka Präsidentensimulator', tag: '2026–2029', sticky: true,
+      title: 'Sri Lanka Präsidentensimulator', tag: '2026–OFFEN', sticky: true,
       body: el('div', { class: 'col gap12' }, [
         el('div', { style: { fontSize: '13px', lineHeight: '1.7' } },
           'Sri Lanka hat außergewöhnlich gute Voraussetzungen: hohe Alphabetisierung, kostenlose Bildung und Gesundheitsversorgung, ' +

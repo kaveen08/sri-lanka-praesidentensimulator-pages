@@ -20,6 +20,14 @@
       year: B.META.startYear,
       q: B.META.startQuarter,
       turn: 0,
+      termNumber: 1,
+      termStartYear: B.META.startYear,
+      termStartQuarter: B.META.startQuarter,
+      termEndYear: B.META.termEndYear,
+      termEndQuarter: B.META.termEndQuarter,
+      termLimit: 2,                  /* null = keine Begrenzung */
+      electionsWon: 0,
+      electionHistory: [],
       difficulty: opts.difficulty || 'normal',
       playerName: opts.playerName || B.META.president,
 
@@ -156,6 +164,37 @@
   /* --- Speichern und Laden --- */
   function normalizeSave(st) {
     if (!st || st.version !== 1) return null;
+    st.flags = st.flags || {};
+    st.termNumber = st.termNumber || 1;
+    st.termStartYear = st.termStartYear || B.META.startYear;
+    st.termStartQuarter = st.termStartQuarter || B.META.startQuarter;
+    st.termEndYear = st.termEndYear || B.META.termEndYear;
+    st.termEndQuarter = st.termEndQuarter || B.META.termEndQuarter;
+    if (st.termLimit === undefined) st.termLimit = st.flags.termLimitRemoved ? null : 2;
+    st.electionsWon = st.electionsWon || Math.max(0, st.termNumber - 1);
+    if (!Array.isArray(st.electionHistory)) st.electionHistory = [];
+
+    /* Spielstände aus der früheren Ein-Amtszeit-Version endeten trotz
+       Wiederwahlsieg. Sie werden automatisch in die zweite Amtszeit migriert. */
+    if (st.gameOver && st.gameOver.kind === 'reelected') {
+      var oldElection = st.gameOver;
+      st.termNumber = Math.max(2, st.termNumber);
+      st.electionsWon = Math.max(1, st.electionsWon);
+      st.termStartYear = st.year;
+      st.termStartQuarter = st.q;
+      st.termEndYear = st.year + 4;
+      st.termEndQuarter = 4;
+      st.electionHistory.push({
+        year: B.META.termEndYear, term: 1, wonTerm: 2, eligible: true,
+        won: true, vote: oldElection.vote
+      });
+      st.gameOver = null;
+      st.log = st.log || [];
+      st.log.unshift({
+        t: U.qLabel(st.year, st.q), kind: 'good',
+        text: 'Älterer Spielstand migriert: Die gewonnene Wiederwahl führt jetzt in die zweite Amtszeit.'
+      });
+    }
     /* Ereignisse enthalten Funktionen, die JSON nicht überlebt.
        Deshalb wird das offene Ereignis über seine Kennung neu verknüpft. */
     if (st.pendingEvent && st.pendingEvent.id) {

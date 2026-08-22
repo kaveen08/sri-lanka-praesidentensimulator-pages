@@ -763,7 +763,8 @@
     host.appendChild(el('div', { class: 'view-head' }, [
       el('div', {}, [
         el('h2', { text: go ? 'Abschlussbericht' : 'Zwischenbericht' }),
-        el('div', { class: 'sub', text: go ? go.text : 'Stand ' + U.qLabel(st.year, st.q) + '. So stünde Ihre Bilanz, wenn die Amtszeit heute endete.' })
+        el('div', { class: 'sub', text: go ? go.text : 'Stand ' + U.qLabel(st.year, st.q) +
+          ' in Ihrer ' + (st.termNumber || 1) + '. Amtszeit. So stünde Ihre Bilanz, wenn die Amtszeit heute endete.' })
       ])
     ]));
 
@@ -779,7 +780,7 @@
             return X.meter({ label: p.k, value: p.v, min: 0, max: 100, text: U.n0(p.v) });
           }))
         ]),
-        go ? X.note(go.title + ': ' + go.text, go.kind === 'reelected' ? '' : 'bad') : null
+        go ? X.note(go.title + ': ' + go.text, 'bad') : null
       ]),
       X.panel('Bilanz in Zahlen', [
         el('table', { class: 'dtable' }, [
@@ -800,6 +801,28 @@
       ])
     ]));
 
+    if (st.electionHistory && st.electionHistory.length) {
+      host.appendChild(el('div', { style: { marginTop: '14px' } }, [
+        X.panel('Wahlhistorie', [
+          el('table', { class: 'dtable' }, [
+            el('thead', {}, el('tr', {}, [
+              el('th', { text: 'Wahljahr' }), el('th', { text: 'Kandidatur' }),
+              el('th', { class: 'num', text: 'Stimmen' }), el('th', { text: 'Ergebnis' })
+            ])),
+            el('tbody', {}, st.electionHistory.map(function (e) {
+              return el('tr', {}, [
+                el('td', { text: String(e.year) }),
+                el('td', { text: e.eligible ? ('für ' + ((e.term || 1) + 1) + '. Amtszeit') : 'durch Amtszeitlimit gesperrt' }),
+                el('td', { class: 'num', text: e.vote === null || e.vote === undefined ? '—' : U.n1(e.vote) + ' %' }),
+                el('td', { style: { color: e.won ? 'var(--green)' : 'var(--red)' },
+                  text: e.won ? ('gewonnen · ' + e.wonTerm + '. Amtszeit') : (e.eligible ? 'verloren' : 'nicht wählbar') })
+              ]);
+            }))
+          ])
+        ])
+      ]));
+    }
+
     var enacted = Object.keys(st.enacted).map(E.byId).filter(Boolean);
     host.appendChild(el('div', { style: { marginTop: '14px' } }, [
       X.panel('Beschlossene Maßnahmen (' + enacted.length + ')', [
@@ -817,7 +840,7 @@
 
     if (go) {
       host.appendChild(el('div', { class: 'row center', style: { marginTop: '18px' } }, [
-        el('button', { class: 'primary', text: 'Neue Amtszeit beginnen', onclick: function () {
+        el('button', { class: 'primary', text: 'Neue Karriere beginnen', onclick: function () {
           SL.state.clearSave(); location.reload();
         } })
       ]));
