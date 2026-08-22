@@ -962,7 +962,7 @@
     if (go) {
       host.appendChild(el('div', { class: 'row center', style: { marginTop: '18px' } }, [
         el('button', { class: 'primary', text: 'Neue Karriere beginnen', onclick: function () {
-          SL.state.clearSave(); location.reload();
+          SL.app.newCareer();
         } })
       ]));
     }

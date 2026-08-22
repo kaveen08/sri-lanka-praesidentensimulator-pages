@@ -388,6 +388,12 @@
     /* Sofortige Sonderwirkungen */
     E.special(st, p);
 
+    E.recordDecisionFinance(st, {
+      sourceId: p.id, sourceType: 'policy', title: p.title,
+      recurringRev: p.fiscal && p.fiscal.rev, recurringExp: p.fiscal && p.fiscal.exp,
+      oneoffExp: p.oneoff || 0, active: true
+    });
+
     E.queueConsequence(st, {
       kind: 'policy', sourceId: p.id, sourceTitle: p.title,
       decision: 'Maßnahme beschlossen', category: p.cat || '',
@@ -410,6 +416,9 @@
     }
     delete st.enacted[id];
     st.repealed[id] = st.turn;
+    (st.decisionFinance || []).forEach(function (entry) {
+      if (entry.sourceType === 'policy' && entry.sourceId === id && entry.active) entry.active = false;
+    });
     st.pc -= Math.round((p ? p.pc : 10) * 0.4);
     St.log(st, 'warn', 'Zurückgenommen: ' + (p ? p.title : id) + '.');
     return true;
@@ -876,6 +885,46 @@
     return out;
   }
 
+  function financeParts(rev, exp) {
+    rev = Number(rev) || 0; exp = Number(exp) || 0;
+    return {
+      plus: Math.max(0, rev) + Math.max(0, -exp),
+      minus: Math.max(0, -rev) + Math.max(0, exp)
+    };
+  }
+
+  E.recordDecisionFinance = function (st, item) {
+    var recurring = financeParts(item.recurringRev, item.recurringExp);
+    var once = financeParts(item.oneoffRev, item.oneoffExp);
+    if (!recurring.plus && !recurring.minus && !once.plus && !once.minus) return null;
+    st.decisionFinance = st.decisionFinance || [];
+    var entry = {
+      id: 'df_' + st.turn + '_' + st.decisionFinance.length + '_' + Math.floor(E.rand(st) * 100000),
+      sourceId: item.sourceId, sourceType: item.sourceType,
+      title: item.title, decision: item.decision || '', turn: st.turn,
+      year: st.year, q: st.q, recurringPlus: recurring.plus, recurringMinus: recurring.minus,
+      oneoffPlus: once.plus, oneoffMinus: once.minus, active: item.active !== false
+    };
+    st.decisionFinance.push(entry);
+    return entry;
+  };
+
+  E.decisionFinanceSummary = function (st) {
+    var scale = E.scale(st), recurringPlus = 0, recurringMinus = 0, oneoffPlus = 0, oneoffMinus = 0;
+    (st.decisionFinance || []).forEach(function (entry) {
+      if (entry.active !== false) {
+        recurringPlus += (entry.recurringPlus || 0) * scale;
+        recurringMinus += (entry.recurringMinus || 0) * scale;
+      }
+      oneoffPlus += entry.oneoffPlus || 0;
+      oneoffMinus += entry.oneoffMinus || 0;
+    });
+    return {
+      recurring: { plus: recurringPlus, minus: recurringMinus, total: recurringPlus - recurringMinus },
+      oneoff: { plus: oneoffPlus, minus: oneoffMinus, total: oneoffPlus - oneoffMinus }
+    };
+  };
+
   E.queueConsequence = function (st, item) {
     st.consequenceQueue = st.consequenceQueue || [];
     item.id = item.id || ('cq_' + st.turn + '_' + st.consequenceQueue.length + '_' + Math.floor(E.rand(st) * 100000));
@@ -1178,6 +1227,12 @@
       if (o.fiscal.exp) st.oneoffQueue = (st.oneoffQueue || 0) + o.fiscal.exp;
     }
     if (o.pc) st.pc = U.clamp(st.pc + o.pc, 0, 220);
+
+    E.recordDecisionFinance(st, {
+      sourceId: ev.id, sourceType: 'event', title: ev.title, decision: o.t,
+      oneoffRev: o.fiscal && o.fiscal.rev, oneoffExp: o.fiscal && o.fiscal.exp,
+      active: false
+    });
 
     switch (o.special) {
       case 'calm_street': st.streetPressure = Math.max(0, st.streetPressure - 22); break;

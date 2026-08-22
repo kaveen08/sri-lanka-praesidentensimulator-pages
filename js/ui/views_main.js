@@ -404,29 +404,69 @@
 
     host.appendChild(el('div', { class: 'grid g2' }, [revPanel, expPanel]));
 
-    /* Wirkung beschlossener Maßnahmen auf den Haushalt */
-    var fiscalPolicies = Object.keys(st.enacted).map(E.byId).filter(function (p) {
-      return p && p.fiscal && ((p.fiscal.rev || 0) !== 0 || (p.fiscal.exp || 0) !== 0);
+    /* Nachvollziehbare finanzielle Wirkung aller Entscheidungen */
+    var finance = E.decisionFinanceSummary(st);
+    var recurringRows = (st.decisionFinance || []).filter(function (entry) {
+      return entry.active !== false && ((entry.recurringPlus || 0) || (entry.recurringMinus || 0));
     });
+    var oneoffRows = (st.decisionFinance || []).filter(function (entry) {
+      return (entry.oneoffPlus || 0) || (entry.oneoffMinus || 0);
+    }).slice().reverse();
+
+    function balanceCards(summary, suffix) {
+      return el('div', { class: 'decision-balance' }, [
+        el('div', { class: 'db-card plus' }, [
+          el('span', { class: 'hud-label', text: '+ gemacht' }),
+          el('strong', { text: '+ ' + U.lkr(summary.plus) }),
+          el('small', { text: suffix })
+        ]),
+        el('div', { class: 'db-card minus' }, [
+          el('span', { class: 'hud-label', text: '− gemacht' }),
+          el('strong', { text: '− ' + U.lkr(summary.minus) }),
+          el('small', { text: suffix })
+        ]),
+        el('div', { class: 'db-card total ' + (summary.total >= 0 ? 'positive' : 'negative') }, [
+          el('span', { class: 'hud-label', text: 'Total' }),
+          el('strong', { text: U.lkrS(summary.total) }),
+          el('small', { text: suffix })
+        ])
+      ]);
+    }
+
+    function financeTable(rows, recurring) {
+      return rows.length ? el('table', { class: 'dtable decision-finance-table' }, [
+        el('thead', {}, el('tr', {}, [
+          el('th', { text: 'Entscheidung' }), el('th', { text: 'Zeitpunkt' }),
+          el('th', { class: 'num', text: '+' }), el('th', { class: 'num', text: '−' }),
+          el('th', { class: 'num', text: 'Total' })
+        ])),
+        el('tbody', {}, rows.map(function (entry) {
+          var plus = (recurring ? entry.recurringPlus * sc : entry.oneoffPlus) || 0;
+          var minus = (recurring ? entry.recurringMinus * sc : entry.oneoffMinus) || 0;
+          var total = plus - minus;
+          return el('tr', {}, [
+            el('td', {}, [el('strong', { text: entry.title }), entry.decision ? el('div', { class: 'xsmall faint', text: entry.decision }) : null]),
+            el('td', { class: 'mono xsmall', text: entry.year && entry.q ? U.qLabel(entry.year, entry.q) : ('Q' + ((entry.turn || 0) + 1)) }),
+            el('td', { class: 'num', style: { color: plus ? 'var(--green)' : '' }, text: plus ? ('+' + U.lkr(plus)) : '–' }),
+            el('td', { class: 'num', style: { color: minus ? 'var(--red)' : '' }, text: minus ? ('−' + U.lkr(minus)) : '–' }),
+            el('td', { class: 'num', style: { color: total >= 0 ? 'var(--green)' : 'var(--red)' }, text: U.lkrS(total) })
+          ]);
+        }))
+      ]) : el('div', { class: 'faint small', text: 'Noch keine finanzwirksamen Entscheidungen in dieser Kategorie.' });
+    }
+
     host.appendChild(el('div', { style: { marginTop: '14px' } }, [
-      X.panel('Haushaltswirkung beschlossener Maßnahmen', [
-        fiscalPolicies.length ? el('table', { class: 'dtable' }, [
-          el('thead', {}, el('tr', {}, [
-            el('th', { text: 'Maßnahme' }), el('th', { text: 'Bereich' }),
-            el('th', { class: 'num', text: 'Einnahmen' }), el('th', { class: 'num', text: 'Ausgaben' }),
-            el('th', { class: 'num', text: 'Saldo' })
-          ])),
-          el('tbody', {}, fiscalPolicies.map(function (p) {
-            var r = (p.fiscal.rev || 0) * sc, x = (p.fiscal.exp || 0) * sc, s = r - x;
-            return el('tr', {}, [
-              el('td', { text: p.title }),
-              el('td', {}, [X.badge((M.DOMAIN_BY_KEY[p.cat] || {}).label || p.cat, '')]),
-              el('td', { class: 'num', style: { color: r > 0 ? 'var(--green)' : (r < 0 ? 'var(--red)' : '') }, text: r ? U.sign(r, 0) : '–' }),
-              el('td', { class: 'num', style: { color: x > 0 ? 'var(--amber)' : (x < 0 ? 'var(--cy)' : '') }, text: x ? U.sign(x, 0) : '–' }),
-              el('td', { class: 'num', style: { color: s >= 0 ? 'var(--green)' : 'var(--red)' }, text: U.sign(s, 0) })
-            ]);
-          }))
-        ]) : el('div', { class: 'faint small', text: 'Bislang wirkt keine beschlossene Maßnahme auf den Haushalt.' }),
+      X.panel('Entscheidungsbilanz · laufende Jahreswirkung', [
+        balanceCards(finance.recurring, 'LKR pro Jahr'),
+        financeTable(recurringRows, true),
+        el('div', { class: 'decision-once-head' }, [
+          el('div', {}, [
+            el('div', { class: 'hud-title', text: 'Einmalige Wirkungen bisher' }),
+            el('div', { class: 'xsmall faint', text: 'Kosten, Zuschüsse, Hilfen und Erlöse aus Maßnahmen und Ereignisentscheidungen.' })
+          ])
+        ]),
+        balanceCards(finance.oneoff, 'LKR einmalig'),
+        financeTable(oneoffRows, false),
         el('div', { style: { marginTop: '10px' } }, [
           el('button', { class: 'tiny', text: 'Haushaltsmaßnahmen durchsehen', onclick: function () { SL.app.go('p_budget'); } })
         ])

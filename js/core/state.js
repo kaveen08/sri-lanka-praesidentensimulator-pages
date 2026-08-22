@@ -8,6 +8,9 @@
   var Gov = SL.data.governance || { MINISTRIES: [], INSTITUTIONS: [] };
   var SAVE_KEY = 'lk_president_sim_v1';
   var SAVE_META_KEY = SAVE_KEY + '_meta';
+  var SLOTS_KEY = 'lk_president_sim_slots_v2';
+  var ACTIVE_SLOT_KEY = SLOTS_KEY + '_active';
+  var activeSlotId = null, activeSlotName = null;
   var isLocalHost = location.protocol === 'http:' &&
     (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
   var isTailscaleHost = location.protocol === 'https:' &&
@@ -70,6 +73,38 @@
     return institutions;
   }
 
+  function financialParts(rev, exp) {
+    rev = Number(rev) || 0; exp = Number(exp) || 0;
+    return {
+      plus: Math.max(0, rev) + Math.max(0, -exp),
+      minus: Math.max(0, -rev) + Math.max(0, exp)
+    };
+  }
+
+  function migrateDecisionFinance(st) {
+    if (Array.isArray(st.decisionFinance)) return;
+    st.decisionFinance = [];
+    var policies = SL.data.policies || [], byId = {};
+    policies.forEach(function (p) { byId[p.id] = p; });
+    var seen = {};
+    function add(id, active) {
+      if (seen[id]) return; seen[id] = true;
+      var p = byId[id];
+      if (!p || (!p.fiscal && !p.oneoff)) return;
+      var recurring = financialParts(p.fiscal && p.fiscal.rev, p.fiscal && p.fiscal.exp);
+      var once = financialParts(0, p.oneoff || 0);
+      var rec = st.enacted && st.enacted[id];
+      st.decisionFinance.push({
+        id: 'migrated_' + id, sourceId: id, sourceType: 'policy', title: p.title,
+        turn: rec ? rec.turn : (st.repealed && st.repealed[id]) || 0,
+        recurringPlus: recurring.plus, recurringMinus: recurring.minus,
+        oneoffPlus: once.plus, oneoffMinus: once.minus, active: active
+      });
+    }
+    Object.keys(st.enacted || {}).forEach(function (id) { add(id, true); });
+    Object.keys(st.repealed || {}).forEach(function (id) { add(id, false); });
+  }
+
   S.create = function (opts) {
     opts = opts || {};
     var st = {
@@ -98,6 +133,7 @@
       institutions: defaultInstitutions(),
       consequenceQueue: [],
       governanceHistory: [],
+      decisionFinance: [],
 
       gdpN: B.META.gdpNominal,      /* nominales BIP in LKR Mrd. */
       debt: B.META.gdpNominal * B.INDICATORS.debtGdp / 100,
@@ -254,6 +290,7 @@
     });
     st.consequenceQueue = Array.isArray(st.consequenceQueue) ? st.consequenceQueue : [];
     st.governanceHistory = Array.isArray(st.governanceHistory) ? st.governanceHistory : [];
+    migrateDecisionFinance(st);
 
     /* Spielstände aus der früheren Ein-Amtszeit-Version endeten trotz
        Wiederwahlsieg. Sie werden automatisch in die zweite Amtszeit migriert. */
@@ -284,12 +321,86 @@
     return st;
   }
 
-  function writeLocal(st, savedAt) {
+  function isoNow() { return new Date().toISOString(); }
+  function newSlotId() { return 'slot_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 0xffffff).toString(36); }
+  function cleanSlotName(value, st) {
+    var name = String(value || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+    if (name) return name;
+    return (st && st.playerName ? st.playerName : 'Spielstand') + ' · ' + (st ? U.qLabel(st.year, st.q) : 'ORACLE');
+  }
+
+  function readLocalCollection() {
+    var collection = null;
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(st));
-      localStorage.setItem(SAVE_META_KEY, savedAt || new Date().toISOString());
+      var raw = localStorage.getItem(SLOTS_KEY);
+      if (raw) collection = JSON.parse(raw);
+    } catch (e) {}
+    if (!collection || collection.version !== 2 || !Array.isArray(collection.slots)) {
+      collection = { version: 2, activeSlotId: null, slots: [] };
+      try {
+        var legacyRaw = localStorage.getItem(SAVE_KEY);
+        if (legacyRaw) {
+          var legacyState = JSON.parse(legacyRaw);
+          var legacyStamp = localStorage.getItem(SAVE_META_KEY) || isoNow();
+          collection.slots.push({
+            id: 'legacy', name: cleanSlotName('', legacyState), createdAt: legacyStamp,
+            savedAt: legacyStamp, lastPlayedAt: legacyStamp, save: legacyState
+          });
+          collection.activeSlotId = 'legacy';
+        }
+      } catch (e2) {}
+    }
+    collection.slots = collection.slots.filter(function (slot) { return slot && slot.id && slot.save; });
+    try { collection.activeSlotId = localStorage.getItem(ACTIVE_SLOT_KEY) || collection.activeSlotId; } catch (e3) {}
+    if (!collection.slots.some(function (slot) { return slot.id === collection.activeSlotId; })) {
+      collection.activeSlotId = collection.slots.length ? collection.slots[0].id : null;
+    }
+    return collection;
+  }
+
+  function writeLocalCollection(collection) {
+    try {
+      localStorage.setItem(SLOTS_KEY, JSON.stringify(collection));
+      if (collection.activeSlotId) localStorage.setItem(ACTIVE_SLOT_KEY, collection.activeSlotId);
+      else localStorage.removeItem(ACTIVE_SLOT_KEY);
       return true;
     } catch (e) { return false; }
+  }
+
+  function slotSummary(slot, source) {
+    var st = slot.save || {};
+    return {
+      id: slot.id, name: slot.name, createdAt: slot.createdAt, savedAt: slot.savedAt,
+      lastPlayedAt: slot.lastPlayedAt || slot.savedAt, year: slot.year || st.year,
+      q: slot.q || st.q, turn: slot.turn === undefined ? st.turn : slot.turn,
+      termNumber: slot.termNumber || st.termNumber, playerName: slot.playerName || st.playerName,
+      source: source || slot.source || 'browser'
+    };
+  }
+
+  function cacheLocalSlot(st, meta) {
+    meta = meta || {};
+    var collection = readLocalCollection();
+    var id = meta.id || activeSlotId || collection.activeSlotId || newSlotId();
+    var slot = collection.slots.filter(function (item) { return item.id === id; })[0];
+    var now = meta.savedAt || isoNow();
+    if (!slot) {
+      slot = { id: id, createdAt: meta.createdAt || now };
+      collection.slots.push(slot);
+    }
+    slot.name = cleanSlotName(meta.name || slot.name || activeSlotName, st);
+    slot.savedAt = now;
+    slot.lastPlayedAt = meta.lastPlayedAt || now;
+    slot.save = st;
+    collection.activeSlotId = id;
+    activeSlotId = id; activeSlotName = slot.name;
+    var ok = writeLocalCollection(collection);
+    /* Alte Builds koennen den aktiven Slot weiterhin lesen. */
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(st));
+      localStorage.setItem(SAVE_META_KEY, slot.savedAt);
+    } catch (e) {}
+    return ok;
   }
 
   function apiFetch(path, options) {
@@ -325,19 +436,35 @@
 
   S.BACKEND_URL = API_ROOT;
 
-  S.saveLocal = function (st) { return writeLocal(st); };
+  S.activeSlot = function () {
+    var collection = readLocalCollection();
+    var id = activeSlotId || collection.activeSlotId;
+    var slot = collection.slots.filter(function (item) { return item.id === id; })[0];
+    return slot ? slotSummary(slot, 'browser') : null;
+  };
+
+  S.beginSlot = function (st, name) {
+    activeSlotId = newSlotId(); activeSlotName = cleanSlotName(name, st);
+    cacheLocalSlot(st, { id: activeSlotId, name: activeSlotName });
+    return S.activeSlot();
+  };
+
+  S.saveLocal = function (st) { return cacheLocalSlot(st); };
 
   S.saveToBackend = function (st) {
-    return apiFetch('/save', {
+    if (!activeSlotId) S.beginSlot(st);
+    return apiFetch('/saves/' + encodeURIComponent(activeSlotId), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ save: st })
+      body: JSON.stringify({ save: st, name: activeSlotName })
     });
   };
 
   S.saveNow = function (st) {
     var local = S.saveLocal(st);
     return S.saveToBackend(st).then(function (result) {
+      cacheLocalSlot(st, { id: result.slotId || activeSlotId, name: result.name || activeSlotName,
+        savedAt: result.savedAt, lastPlayedAt: result.savedAt });
       return { local: local, backend: true, savedAt: result.savedAt };
     }, function (error) {
       return { local: local, backend: false, error: error };
@@ -347,58 +474,106 @@
   /* Automatische Speicherpunkte blockieren den Spielablauf nicht. */
   S.save = function (st) {
     var local = S.saveLocal(st);
-    S.saveToBackend(st).catch(function () {});
+    S.saveToBackend(st).then(function (result) {
+      cacheLocalSlot(st, { id: result.slotId || activeSlotId, name: result.name || activeSlotName,
+        savedAt: result.savedAt, lastPlayedAt: result.savedAt });
+    }).catch(function () {});
     return local;
   };
 
   S.load = function () {
-    try {
-      var raw = localStorage.getItem(SAVE_KEY);
-      if (!raw) return null;
-      return normalizeSave(JSON.parse(raw));
-    } catch (e) { return null; }
+    var collection = readLocalCollection();
+    var slot = collection.slots.filter(function (item) { return item.id === collection.activeSlotId; })[0];
+    if (!slot) return null;
+    activeSlotId = slot.id; activeSlotName = slot.name;
+    return normalizeSave(slot.save);
   };
 
   S.loadFromBackend = function () {
     return apiFetch('/save').then(function (payload) {
       var state = normalizeSave(payload.save);
       if (!state) throw new Error('Backend enthält keinen gültigen Spielstand.');
-      return { state: state, savedAt: payload.savedAt || null };
+      activeSlotId = payload.slotId || 'legacy'; activeSlotName = payload.name || cleanSlotName('', state);
+      cacheLocalSlot(state, { id: activeSlotId, name: activeSlotName, savedAt: payload.savedAt,
+        lastPlayedAt: payload.savedAt });
+      return { state: state, savedAt: payload.savedAt || null, slotId: activeSlotId };
     });
   };
 
   S.loadAvailable = function () {
-    var local = S.load();
-    var localSavedAt = null;
-    try { localSavedAt = localStorage.getItem(SAVE_META_KEY); } catch (e) {}
-    return apiFetch('/health').then(function (health) {
-      if (!health.saveExists) return { state: local, backend: true, source: local ? 'browser' : null };
-      return S.loadFromBackend().then(function (remote) {
-        var useRemote = !local || !localSavedAt || !remote.savedAt || remote.savedAt >= localSavedAt;
-        if (useRemote) writeLocal(remote.state, remote.savedAt);
-        return {
-          state: useRemote ? remote.state : local,
-          backend: true,
-          source: useRemote ? 'backend' : 'browser'
-        };
+    var localCollection = readLocalCollection();
+    var localSlots = localCollection.slots.map(function (slot) { return slotSummary(slot, 'browser'); });
+    return apiFetch('/saves').then(function (remote) {
+      var merged = {}, order = [];
+      localSlots.forEach(function (slot) { merged[slot.id] = slot; order.push(slot.id); });
+      (remote.slots || []).forEach(function (slot) {
+        var local = merged[slot.id];
+        var remoteTime = Date.parse(slot.savedAt || 0), localTime = local ? Date.parse(local.savedAt || 0) : 0;
+        if (!local) order.push(slot.id);
+        if (!local || remoteTime >= localTime) merged[slot.id] = Object.assign({}, slot, { source: 'backend' });
       });
+      var active = remote.activeSlotId || localCollection.activeSlotId;
+      return { slots: order.map(function (id) { return merged[id]; }), backend: true, activeSlotId: active };
     }, function () {
-      return { state: local, backend: false, source: local ? 'browser' : null };
+      return { slots: localSlots, backend: false, activeSlotId: localCollection.activeSlotId };
     });
   };
 
-  S.hasSave = function () {
-    try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; }
+  S.loadSlot = function (slot) {
+    var id = typeof slot === 'string' ? slot : slot.id;
+    var source = typeof slot === 'string' ? 'backend' : slot.source;
+    var localCollection = readLocalCollection();
+    var local = localCollection.slots.filter(function (item) { return item.id === id; })[0];
+    function useLocal() {
+      if (!local) return Promise.reject(new Error('Spielstand ist nicht mehr vorhanden.'));
+      var state = normalizeSave(local.save);
+      activeSlotId = local.id; activeSlotName = local.name;
+      cacheLocalSlot(state, { id: local.id, name: local.name, createdAt: local.createdAt });
+      return Promise.resolve(state);
+    }
+    if (source !== 'backend') return useLocal();
+    return apiFetch('/saves/' + encodeURIComponent(id)).then(function (remote) {
+      var state = normalizeSave(remote.save);
+      if (!state) throw new Error('Backend enthält keinen gültigen Spielstand.');
+      activeSlotId = remote.id; activeSlotName = remote.name;
+      cacheLocalSlot(state, remote);
+      return state;
+    }, function () { return useLocal(); });
   };
 
-  S.clearBackend = function () { return apiFetch('/save', { method: 'DELETE' }); };
+  S.renameSlot = function (id, name) {
+    name = cleanSlotName(name);
+    var collection = readLocalCollection();
+    var slot = collection.slots.filter(function (item) { return item.id === id; })[0];
+    if (slot) { slot.name = name; writeLocalCollection(collection); }
+    if (activeSlotId === id || collection.activeSlotId === id) activeSlotName = name;
+    return apiFetch('/saves/' + encodeURIComponent(id), {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name })
+    }).then(function () { return { ok: true, backend: true }; }, function () { return { ok: !!slot, backend: false }; });
+  };
+
+  S.deleteSlot = function (id) {
+    var collection = readLocalCollection();
+    var existed = collection.slots.some(function (item) { return item.id === id; });
+    var wasActive = activeSlotId === id || collection.activeSlotId === id;
+    collection.slots = collection.slots.filter(function (item) { return item.id !== id; });
+    if (collection.activeSlotId === id) collection.activeSlotId = collection.slots.length ? collection.slots[0].id : null;
+    writeLocalCollection(collection);
+    if (activeSlotId === id) { activeSlotId = null; activeSlotName = null; }
+    return apiFetch('/saves/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
+      return { ok: true, backend: true, wasActive: wasActive };
+    }, function () { return { ok: existed, backend: false, wasActive: wasActive }; });
+  };
+
+  S.hasSave = function () {
+    return readLocalCollection().slots.length > 0;
+  };
+
+  S.clearBackend = function () { return activeSlotId ? apiFetch('/saves/' + encodeURIComponent(activeSlotId), { method: 'DELETE' }) : Promise.resolve({ ok: true }); };
 
   S.clearSave = function () {
-    try {
-      localStorage.removeItem(SAVE_KEY);
-      localStorage.removeItem(SAVE_META_KEY);
-    } catch (e) {}
-    S.clearBackend().catch(function () {});
+    var id = activeSlotId || readLocalCollection().activeSlotId;
+    if (id) S.deleteSlot(id).catch(function () {});
   };
 
 })(SL.state = SL.state || {});

@@ -216,10 +216,11 @@
         st.streetPressure <= 40 ? 'var(--green)' : (st.streetPressure <= 65 ? 'var(--amber)' : 'var(--red)'),
         'Protestdruck. Ab 88 wird es gefährlich.'),
       el('div', { id: 'turn-actions' }, [
+        el('button', { class: 'ghost tiny', text: 'Spielstände', onclick: showSaveManager }),
         el('button', { class: 'ghost tiny', text: 'Speichern', onclick: function () {
           St.saveNow(st).then(function (result) {
             if (result.backend) {
-              X.toast('good', 'Gespeichert', 'Spielstand dauerhaft auf diesem Gerät abgelegt.');
+              X.toast('good', 'Gespeichert', '„' + ((St.activeSlot() || {}).name || 'Spielstand') + '“ wurde aktualisiert.');
             } else if (result.local) {
               X.toast('warn', 'Nur im Browser gespeichert', 'Das lokale Backend ist derzeit nicht erreichbar.');
             } else {
@@ -357,7 +358,7 @@
       actions: function (close) {
         return [
           el('button', { class: 'ghost', text: 'Bericht ansehen', onclick: close }),
-          el('button', { class: 'primary', text: 'Neue Karriere', onclick: function () { St.clearSave(); location.reload(); } })
+          el('button', { class: 'primary', text: 'Neue Karriere', onclick: function () { close(); newCareerDialog(); } })
         ];
       }
     });
@@ -458,58 +459,153 @@
     });
   }
 
-  function renderStartScreen(available) {
-    var saved = available.state;
-    X.modal({
-      title: 'Sri Lanka Präsidentensimulator', tag: '2026–OFFEN', sticky: true,
-      body: el('div', { class: 'col gap12' }, [
-        el('div', { style: { fontSize: '13px', lineHeight: '1.7' } },
-          'Sri Lanka hat außergewöhnlich gute Voraussetzungen: hohe Alphabetisierung, kostenlose Bildung und Gesundheitsversorgung, ' +
-          'eine strategische Lage an den wichtigsten Schifffahrtsrouten, Häfen, eine große Diaspora. ' +
-          'Und es verwandelt diese Vorteile zu schlecht in Produktivität, Wohlstand und einen gemeinsamen Staat. Ändern Sie das.'),
-        el('div', { class: 'row gap10 wrap' }, [
-          X.badge('Haushalt', 'cy'), X.badge('Verfassung', 'blue'), X.badge('Ethnie, Religion, Kaste, Sprache', 'red'),
-          X.badge('Provinzen & Kommunen', 'violet'), X.badge('Militär', ''), X.badge('Ministerien', 'lime'), X.badge('Klima', 'green')
-        ]),
-        el('div', { class: 'row gap8 wrap' }, [
-          available.backend
-            ? X.badge('Savegame-Backend verbunden', 'green')
-            : X.badge('Backend offline · Browser-Speicher aktiv', 'amber'),
-          saved ? X.badge(available.source === 'backend' ? 'Gemeinsamer Spielstand gefunden' : 'Browser-Spielstand gefunden', 'cy') : null
-        ])
+  function playedAt(value) {
+    if (!value) return 'unbekannt';
+    try { return new Date(value).toLocaleString('de-CH', { dateStyle: 'medium', timeStyle: 'short' }); }
+    catch (e) { return value; }
+  }
+
+  function loadSlot(slot, manager) {
+    St.loadSlot(slot).then(function (loaded) {
+      st = loaded; E.recomputeIndex(st); St.save(st);
+      manager.close(); A.render();
+      X.toast('good', 'Spielstand geladen', '„' + slot.name + '“ · ' + U.qLabel(st.year, st.q));
+    }, function (error) {
+      X.toast('bad', 'Laden fehlgeschlagen', error.message || 'Der Spielstand ist nicht erreichbar.');
+    });
+  }
+
+  function renameSlotDialog(slot, manager, startMode) {
+    var input = el('input', { type: 'text', value: slot.name, maxlength: '60', 'aria-label': 'Name des Spielstands' });
+    var dialog = X.modal({
+      title: 'Spielstand umbenennen', tag: U.qLabel(slot.year, slot.q),
+      body: el('div', { class: 'col gap10' }, [
+        el('label', { class: 'hud-label', text: 'Neuer Name' }), input,
+        el('div', { class: 'xsmall faint', text: 'Der Spielstand selbst und sein letzter Spielzeitpunkt bleiben unverändert.' })
       ]),
-      actions: function (close) {
-        var btns = [];
-        if (saved) {
-          btns.push(el('button', { text: 'Gespeicherten Stand fortsetzen', onclick: function () {
-            st = saved;
-            if (!st) { st = St.create({}); }
-            E.recomputeIndex(st);
-            close(); A.render();
-          } }));
-        }
-        if (!available.backend) {
-          btns.push(el('button', { class: 'ghost', text: 'Backend erneut verbinden', onclick: function () {
-            close(); startScreen();
-          } }));
-        }
-        btns.push(el('button', { class: 'primary', text: 'Neue Amtszeit beginnen', onclick: function () {
-          St.clearSave();
-          st = St.create({});
-          E.recomputeIndex(st);
+      actions: function (close) { return [
+        el('button', { class: 'ghost', text: 'Abbrechen', onclick: close }),
+        el('button', { class: 'primary', text: 'Umbenennen', onclick: function () {
+          if (!input.value.trim()) { X.toast('bad', 'Name fehlt', 'Bitte geben Sie einen Namen ein.'); return; }
+          St.renameSlot(slot.id, input.value).then(function () {
+            close(); manager.close(); startMode ? startScreen() : showSaveManager();
+          });
+        } })
+      ]; }
+    });
+    setTimeout(function () { input.focus(); input.select(); }, 0);
+    return dialog;
+  }
+
+  function deleteSlotDialog(slot, manager, startMode) {
+    var current = St.activeSlot();
+    var deletingCurrent = !!(current && current.id === slot.id);
+    X.modal({
+      title: 'Spielstand löschen?', tag: 'NICHT RÜCKGÄNGIG', tagCls: 'red',
+      body: el('div', { class: 'col gap10' }, [
+        el('div', { class: 'small', text: '„' + slot.name + '“ (' + U.qLabel(slot.year, slot.q) + ') wird im Browser und im gemeinsamen Backend gelöscht.' }),
+        X.note('Andere gespeicherte Stände bleiben erhalten.', 'warn')
+      ]),
+      actions: function (close) { return [
+        el('button', { class: 'ghost', text: 'Abbrechen', onclick: close }),
+        el('button', { class: 'danger', text: 'Endgültig löschen', onclick: function () {
+          St.deleteSlot(slot.id).then(function () {
+            close(); manager.close();
+            if (deletingCurrent && !startMode) location.reload();
+            else startMode ? startScreen() : showSaveManager();
+          });
+        } })
+      ]; }
+    });
+  }
+
+  function newCareerDialog(parentClose) {
+    var suggested = 'Neue Amtszeit · ' + new Date().toLocaleDateString('de-CH');
+    var input = el('input', { type: 'text', value: suggested, maxlength: '60', 'aria-label': 'Name des neuen Spielstands' });
+    X.modal({
+      title: 'Neue Amtszeit', tag: 'NEUER SPIELSTAND',
+      body: el('div', { class: 'col gap10' }, [
+        el('label', { class: 'hud-label', text: 'Name des Spielstands' }), input,
+        X.note('Ihre vorhandenen Spielstände werden nicht überschrieben oder gelöscht.', 'good')
+      ]),
+      actions: function (close) { return [
+        el('button', { class: 'ghost', text: 'Abbrechen', onclick: close }),
+        el('button', { class: 'primary', text: 'Amtszeit beginnen', onclick: function () {
+          if (!input.value.trim()) { X.toast('bad', 'Name fehlt', 'Bitte geben Sie einen Namen ein.'); return; }
+          st = St.create({}); E.recomputeIndex(st); St.beginSlot(st, input.value);
           St.log(st, 'info', 'Amtsübernahme. Das IWF-Programm läuft, die kombinierte fünfte und sechste Überprüfung wurde im Mai 2026 freigegeben.');
-          close(); A.render(); briefing();
-        } }));
-        return btns;
+          St.saveNow(st); close(); if (parentClose) parentClose(); A.render(); briefing();
+        } })
+      ]; }
+    });
+    setTimeout(function () { input.focus(); input.select(); }, 0);
+  }
+
+  function renderSaveManager(available, startMode) {
+    var manager;
+    var currentSlot = St.activeSlot();
+    var shownActiveId = !startMode && currentSlot ? currentSlot.id : available.activeSlotId;
+    var slots = (available.slots || []).slice().sort(function (a, b) {
+      return Date.parse(b.lastPlayedAt || b.savedAt || 0) - Date.parse(a.lastPlayedAt || a.savedAt || 0);
+    });
+    var cards = slots.length ? slots.map(function (slot) {
+      var active = shownActiveId === slot.id;
+      return el('div', { class: 'save-slot' + (active ? ' active' : '') }, [
+        el('div', { class: 'save-slot-main' }, [
+          el('div', { class: 'row gap8 wrap' }, [
+            el('strong', { class: 'save-slot-name', text: slot.name }),
+            active ? X.badge('zuletzt aktiv', 'green') : null,
+            slot.source === 'backend' ? X.badge('gemeinsam', 'cy') : X.badge('Browser', 'amber')
+          ]),
+          el('div', { class: 'save-slot-meta' }, [
+            el('span', { text: U.qLabel(slot.year, slot.q) }),
+            el('span', { text: (slot.termNumber || 1) + '. Amtszeit' }),
+            el('span', { text: 'Zuletzt gespielt: ' + playedAt(slot.lastPlayedAt || slot.savedAt) })
+          ])
+        ]),
+        el('div', { class: 'save-slot-actions' }, [
+          el('button', { class: 'tiny primary', text: 'Laden', onclick: function () { loadSlot(slot, manager); } }),
+          el('button', { class: 'tiny ghost', text: 'Umbenennen', onclick: function () { renameSlotDialog(slot, manager, startMode); } }),
+          el('button', { class: 'tiny danger', text: 'Löschen', onclick: function () { deleteSlotDialog(slot, manager, startMode); } })
+        ])
+      ]);
+    }) : [el('div', { class: 'save-empty', text: 'Noch kein Spielstand vorhanden. Beginnen Sie unten eine neue Amtszeit.' })];
+
+    var body = el('div', { class: 'col gap12' }, [
+      startMode ? el('div', { class: 'small muted', style: { lineHeight: '1.65' }, text: 'Wählen Sie einen gespeicherten Stand oder beginnen Sie eine neue Amtszeit. Jeder Stand behält seinen eigenen Namen, Fortschritt und letzten Spielzeitpunkt.' }) : null,
+      el('div', { class: 'row gap8 wrap' }, [
+        available.backend ? X.badge('Gemeinsames Backend verbunden', 'green') : X.badge('Backend offline · Browser-Speicher', 'amber'),
+        X.badge(slots.length + (slots.length === 1 ? ' Spielstand' : ' Spielstände'), 'cy')
+      ]),
+      el('div', { class: 'save-slot-list' }, cards)
+    ]);
+    manager = X.modal({
+      title: startMode ? 'Sri Lanka Präsidentensimulator' : 'Spielstände verwalten',
+      tag: 'SAVE-SLOTS', sticky: !!startMode, body: body,
+      actions: function (close) {
+        var actions = [];
+        if (!startMode) actions.push(el('button', { class: 'ghost', text: 'Schließen', onclick: close }));
+        if (!available.backend) actions.push(el('button', { class: 'ghost', text: 'Backend erneut verbinden', onclick: function () { close(); startMode ? startScreen() : showSaveManager(); } }));
+        actions.push(el('button', { class: 'primary', text: 'Neue Amtszeit', onclick: function () { newCareerDialog(close); } }));
+        return actions;
       }
+    });
+    return manager;
+  }
+
+  function showSaveManager() {
+    St.loadAvailable().then(function (available) { renderSaveManager(available, false); }, function () {
+      renderSaveManager({ slots: [], backend: false, activeSlotId: null }, false);
     });
   }
 
   function startScreen() {
-    St.loadAvailable().then(renderStartScreen, function () {
-      renderStartScreen({ state: St.load(), backend: false, source: St.hasSave() ? 'browser' : null });
+    St.loadAvailable().then(function (available) { renderSaveManager(available, true); }, function () {
+      renderSaveManager({ slots: [], backend: false, activeSlotId: null }, true);
     });
   }
+
+  A.newCareer = newCareerDialog;
 
   /* ---------------------------------------------------------
      Startvorgang

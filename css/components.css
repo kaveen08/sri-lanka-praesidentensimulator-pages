@@ -357,6 +357,37 @@
 .dtable td.num, .dtable th.num { text-align:right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .dtable tr:hover td { background: rgba(34,211,238,.04); }
 
+/* ---------- Spielstand-Slots ---------- */
+.save-slot-list { display:flex; flex-direction:column; gap:8px; max-height:52vh; overflow:auto; padding-right:2px; }
+.save-slot { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:center; padding:12px 13px;
+  border:1px solid var(--line-faint); border-left:3px solid var(--line); background:rgba(255,255,255,.018); }
+.save-slot.active { border-left-color:var(--green); background:rgba(52,211,153,.045); }
+.save-slot-name { color:var(--tx-bright); font-size:14px; }
+.save-slot-meta { display:flex; gap:12px; flex-wrap:wrap; margin-top:6px; font:10px var(--font-mono); color:var(--tx-faint); }
+.save-slot-actions { display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end; }
+.save-empty { padding:22px; border:1px dashed var(--line); text-align:center; color:var(--tx-faint); font-size:12px; }
+
+/* ---------- Finanzielle Entscheidungsbilanz ---------- */
+.decision-balance { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; margin-bottom:12px; }
+.db-card { display:flex; flex-direction:column; gap:4px; padding:12px 13px; border:1px solid var(--line-faint); background:var(--bg-inset); }
+.db-card strong { font:700 20px var(--font-mono); }
+.db-card small { color:var(--tx-faint); font-size:9px; text-transform:uppercase; letter-spacing:.06em; }
+.db-card.plus { border-left:3px solid var(--green); }
+.db-card.plus strong, .db-card.total.positive strong { color:var(--green); }
+.db-card.minus { border-left:3px solid var(--red); }
+.db-card.minus strong, .db-card.total.negative strong { color:var(--red); }
+.db-card.total { border-left:3px solid var(--cy); }
+.decision-once-head { border-top:1px solid var(--line-faint); margin:16px 0 10px; padding-top:14px; }
+.decision-finance-table { margin-bottom:4px; }
+.decision-finance-table td:first-child { max-width:360px; }
+
+@media (max-width: 700px) {
+  .save-slot { grid-template-columns:1fr; }
+  .save-slot-actions { justify-content:flex-start; }
+  .decision-balance { grid-template-columns:1fr; }
+  .decision-finance-table { display:block; overflow-x:auto; white-space:nowrap; }
+}
+
 /* ---------- Fortschrittsschritte ---------- */
 .steps { display:flex; align-items:center; gap:0; }
 .steps .st { flex:1; height:3px; background: var(--bg-raised); position:relative; }
@@ -371,6 +402,7 @@
 }
 .note.warn { border-left-color: var(--amber); background: rgba(251,191,36,.05); }
 .note.bad  { border-left-color: var(--red); background: rgba(244,63,94,.05); }
+.note.good { border-left-color: var(--green); background: rgba(52,211,153,.05); }
 
 /* ---------- Quellenangabe ---------- */
 .src { font-family: var(--font-mono); font-size: 9px; color: var(--tx-faint); }
