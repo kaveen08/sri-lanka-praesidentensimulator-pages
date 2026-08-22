@@ -176,6 +176,11 @@
     options = options || {};
     options.cache = 'no-store';
     options.mode = 'cors';
+    /* Öffentliche HTTPS-Seiten müssen moderne Browser ausdrücklich darauf
+       hinweisen, dass das Ziel nur auf diesem Gerät (Loopback) liegt. */
+    if (!isLocalHost && API_ROOT.indexOf('http://127.0.0.1') === 0) {
+      options.targetAddressSpace = 'loopback';
+    }
     var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     if (controller) options.signal = controller.signal;
     var timeout = setTimeout(function () { if (controller) controller.abort(); }, 2400);

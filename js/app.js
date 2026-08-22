@@ -425,6 +425,11 @@
             close(); A.render();
           } }));
         }
+        if (!available.backend) {
+          btns.push(el('button', { class: 'ghost', text: 'Backend erneut verbinden', onclick: function () {
+            close(); startScreen();
+          } }));
+        }
         btns.push(el('button', { class: 'primary', text: 'Neue Amtszeit beginnen', onclick: function () {
           St.clearSave();
           st = St.create({});
