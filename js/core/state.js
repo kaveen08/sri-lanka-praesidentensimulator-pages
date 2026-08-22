@@ -9,8 +9,11 @@
   var SAVE_META_KEY = SAVE_KEY + '_meta';
   var isLocalHost = location.protocol === 'http:' &&
     (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+  var isTailscaleHost = location.protocol === 'https:' &&
+    /\.ts\.net$/i.test(location.hostname);
   var API_ROOT = String(window.ORACLE_BACKEND_URL ||
-    (isLocalHost ? location.origin + '/api' : 'http://127.0.0.1:8765/api')).replace(/\/$/, '');
+    ((isLocalHost || isTailscaleHost) ? location.origin + '/api' :
+      'http://127.0.0.1:8765/api')).replace(/\/$/, '');
 
   S.create = function (opts) {
     opts = opts || {};

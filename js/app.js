@@ -438,9 +438,9 @@
         ]),
         el('div', { class: 'row gap8 wrap' }, [
           available.backend
-            ? X.badge('Lokales Backend verbunden', 'green')
+            ? X.badge('Savegame-Backend verbunden', 'green')
             : X.badge('Backend offline · Browser-Speicher aktiv', 'amber'),
-          saved ? X.badge(available.source === 'backend' ? 'Gerätespeicher gefunden' : 'Browser-Spielstand gefunden', 'cy') : null
+          saved ? X.badge(available.source === 'backend' ? 'Gemeinsamer Spielstand gefunden' : 'Browser-Spielstand gefunden', 'cy') : null
         ])
       ]),
       actions: function (close) {
