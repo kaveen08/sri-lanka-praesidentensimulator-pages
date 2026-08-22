@@ -11,7 +11,21 @@
     (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
   var isTailscaleHost = location.protocol === 'https:' &&
     /\.ts\.net$/i.test(location.hostname);
-  var API_ROOT = String(window.ORACLE_BACKEND_URL ||
+
+  function tailscaleBackendFromQuery() {
+    try {
+      var requested = new URLSearchParams(location.search || '').get('backend');
+      if (!requested) return '';
+      var parsed = new URL(requested);
+      var cleanPath = parsed.pathname.replace(/\/$/, '');
+      if (parsed.protocol !== 'https:' || !/\.ts\.net$/i.test(parsed.hostname) || cleanPath !== '/api') {
+        return '';
+      }
+      return parsed.origin + '/api';
+    } catch (e) { return ''; }
+  }
+
+  var API_ROOT = String(window.ORACLE_BACKEND_URL || tailscaleBackendFromQuery() ||
     ((isLocalHost || isTailscaleHost) ? location.origin + '/api' :
       'http://127.0.0.1:8765/api')).replace(/\/$/, '');
 
