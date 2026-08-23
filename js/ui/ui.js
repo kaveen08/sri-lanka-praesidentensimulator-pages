@@ -252,6 +252,42 @@
     return el('div', { class: 'seatmap' }, seats);
   };
 
+  X.parliamentChart = function (st, selected, onSelect) {
+    var defs = SL.data.parties.PARTIES || [];
+    var dynamic = st.parliament && st.parliament.seats ? st.parliament.seats : {};
+    var seatOwners = [];
+    defs.forEach(function (p) {
+      for (var n = 0; n < (dynamic[p.k] === undefined ? p.seats : dynamic[p.k]); n++) seatOwners.push(p);
+    });
+    var rows = [33, 39, 45, 51, 57], dots = [], idx = 0;
+    rows.forEach(function (count, row) {
+      var radius = 74 + row * 27;
+      for (var i = 0; i < count; i++) {
+        var angle = Math.PI - (i / (count - 1)) * Math.PI;
+        var owner = seatOwners[idx++] || defs[defs.length - 1];
+        var cx = 220 + Math.cos(angle) * radius;
+        var cy = 222 - Math.sin(angle) * radius;
+        dots.push(svg('circle', {
+          class: 'parl-seat' + (selected === owner.k ? ' selected' : ''),
+          cx: cx.toFixed(2), cy: cy.toFixed(2), r: selected === owner.k ? 4.3 : 3.55,
+          fill: owner.color, 'data-party': owner.k,
+          tabindex: '0', role: 'button', 'aria-label': owner.name + ', Sitz ' + idx,
+          onclick: (function (k) { return function () { if (onSelect) onSelect(k); }; })(owner.k),
+          onkeydown: (function (k) { return function (e) { if ((e.key === 'Enter' || e.key === ' ') && onSelect) onSelect(k); }; })(owner.k)
+        }, [svg('title', { text: owner.full })]));
+      }
+    });
+    return el('div', { class: 'parliament-wrap' }, [
+      svg('svg', { class: 'parliament-chart', viewBox: '0 0 440 236', role: 'img', 'aria-label': 'Interaktive Sitzverteilung im Parlament' }, [
+        svg('path', { class: 'parl-floor', d: 'M123 222 A97 97 0 0 1 317 222' }),
+        dots,
+        svg('text', { x: 220, y: 187, class: 'parl-number', 'text-anchor': 'middle', textContent: String(st.seatsGov) }),
+        svg('text', { x: 220, y: 204, class: 'parl-caption', 'text-anchor': 'middle', textContent: 'REGIERUNGSSITZE' }),
+        svg('line', { x1: 220, y1: 210, x2: 220, y2: 225, class: 'parl-majority-line' })
+      ])
+    ]);
+  };
+
   /* ---------- Modal ---------- */
   X.modal = function (o) {
     var back = el('div', { class: 'modal-back' });

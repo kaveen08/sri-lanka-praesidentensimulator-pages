@@ -456,10 +456,78 @@
        volle Breite, sonst wird die rechte Spalte abgeschnitten. */
     host.appendChild(el('div', { class: 'col gap12' }, [revPanel, expPanel]));
 
-    /* Wirkung beschlossener Maßnahmen auf den Haushalt */
+    /* Nachvollziehbare finanzielle Wirkung aller Entscheidungen */
+    var finance = E.decisionFinanceSummary(st);
+    var recurringRows = (st.decisionFinance || []).filter(function (entry) {
+      return entry.active !== false && ((entry.recurringPlus || 0) || (entry.recurringMinus || 0));
+    });
+    var oneoffRows = (st.decisionFinance || []).filter(function (entry) {
+      return (entry.oneoffPlus || 0) || (entry.oneoffMinus || 0);
+    }).slice().reverse();
     var fiscalPolicies = Object.keys(st.enacted).map(E.byId).filter(function (p) {
       return p && p.fiscal && ((p.fiscal.rev || 0) !== 0 || (p.fiscal.exp || 0) !== 0);
     });
+
+    function balanceCards(summary, suffix) {
+      return el('div', { class: 'decision-balance' }, [
+        el('div', { class: 'db-card plus' }, [
+          el('span', { class: 'hud-label', text: '+ gemacht' }),
+          el('strong', { text: '+ ' + U.lkr(summary.plus) }),
+          el('small', { text: suffix })
+        ]),
+        el('div', { class: 'db-card minus' }, [
+          el('span', { class: 'hud-label', text: '− gemacht' }),
+          el('strong', { text: '− ' + U.lkr(summary.minus) }),
+          el('small', { text: suffix })
+        ]),
+        el('div', { class: 'db-card total ' + (summary.total >= 0 ? 'positive' : 'negative') }, [
+          el('span', { class: 'hud-label', text: 'Total' }),
+          el('strong', { text: U.lkrS(summary.total) }),
+          el('small', { text: suffix })
+        ])
+      ]);
+    }
+
+    function financeTable(rows, recurring) {
+      return rows.length ? el('table', { class: 'dtable decision-finance-table' }, [
+        el('thead', {}, el('tr', {}, [
+          el('th', { text: 'Entscheidung' }), el('th', { text: 'Zeitpunkt' }),
+          el('th', { class: 'num', text: '+' }), el('th', { class: 'num', text: '−' }),
+          el('th', { class: 'num', text: 'Total' })
+        ])),
+        el('tbody', {}, rows.map(function (entry) {
+          var plus = (recurring ? entry.recurringPlus * sc : entry.oneoffPlus) || 0;
+          var minus = (recurring ? entry.recurringMinus * sc : entry.oneoffMinus) || 0;
+          var total = plus - minus;
+          return el('tr', {}, [
+            el('td', {}, [el('strong', { text: entry.title }), entry.decision ? el('div', { class: 'xsmall faint', text: entry.decision }) : null]),
+            el('td', { class: 'mono xsmall', text: entry.year && entry.q ? U.qLabel(entry.year, entry.q) : ('Q' + ((entry.turn || 0) + 1)) }),
+            el('td', { class: 'num', style: { color: plus ? 'var(--green)' : '' }, text: plus ? ('+' + U.lkr(plus)) : '–' }),
+            el('td', { class: 'num', style: { color: minus ? 'var(--red)' : '' }, text: minus ? ('−' + U.lkr(minus)) : '–' }),
+            el('td', { class: 'num', style: { color: total >= 0 ? 'var(--green)' : 'var(--red)' }, text: U.lkrS(total) })
+          ]);
+        }))
+      ]) : el('div', { class: 'faint small', text: 'Noch keine finanzwirksamen Entscheidungen in dieser Kategorie.' });
+    }
+
+    host.appendChild(el('div', { style: { marginTop: '14px' } }, [
+      X.panel('Entscheidungsbilanz · laufende Jahreswirkung', [
+        balanceCards(finance.recurring, 'LKR pro Jahr'),
+        financeTable(recurringRows, true),
+        el('div', { class: 'decision-once-head' }, [
+          el('div', {}, [
+            el('div', { class: 'hud-title', text: 'Einmalige Wirkungen bisher' }),
+            el('div', { class: 'xsmall faint', text: 'Kosten, Zuschüsse, Hilfen und Erlöse aus Maßnahmen und Ereignisentscheidungen.' })
+          ])
+        ]),
+        balanceCards(finance.oneoff, 'LKR einmalig'),
+        financeTable(oneoffRows, false),
+        el('div', { style: { marginTop: '10px' } }, [
+          el('button', { class: 'tiny', text: 'Haushaltsmaßnahmen durchsehen', onclick: function () { SL.app.go('p_budget'); } })
+        ])
+      ])
+    ]));
+
     host.appendChild(el('div', { style: { marginTop: '14px' } }, [
       X.panel('Haushaltswirkung beschlossener Maßnahmen', [
         fiscalPolicies.length ? el('table', { class: 'dtable' }, [
@@ -472,12 +540,12 @@
             var r = (p.fiscal.rev || 0) * sc, x = (p.fiscal.exp || 0) * sc, s = r - x;
             var lineLabels = [];
             if (p.fiscal.rev && p.fline) {
-              var rl = B.REVENUE.filter(function (x) { return x.k === p.fline; })[0];
+              var rl = B.REVENUE.filter(function (line) { return line.k === p.fline; })[0];
               if (rl) lineLabels.push(rl.label);
             }
             if (p.fiscal.exp) {
               var xk = (p.fline && st.budget.exp[p.fline] !== undefined) ? p.fline : E.expLineFor(p.cat);
-              var xl = B.SPENDING.filter(function (x) { return x.k === xk; })[0];
+              var xl = B.SPENDING.filter(function (line) { return line.k === xk; })[0];
               if (xl && lineLabels.indexOf(xl.label) < 0) lineLabels.push(xl.label);
             }
             return el('tr', {}, [
@@ -490,10 +558,7 @@
               el('td', { class: 'num', style: { color: s >= 0 ? 'var(--green)' : 'var(--red)' }, text: U.sign(s, 0) })
             ]);
           }))
-        ]) : el('div', { class: 'faint small', text: 'Bislang wirkt keine beschlossene Maßnahme auf den Haushalt.' }),
-        el('div', { style: { marginTop: '10px' } }, [
-          el('button', { class: 'tiny', text: 'Haushaltsmaßnahmen durchsehen', onclick: function () { SL.app.go('p_budget'); } })
-        ])
+        ]) : el('div', { class: 'faint small', text: 'Bislang wirkt keine beschlossene Maßnahme auf den Haushalt.' })
       ])
     ]));
 
@@ -733,7 +798,7 @@
   /* =========================================================
      KABINETT UND BEHÖRDEN
      ========================================================= */
-  V.cabinet = function (st, host) {
+  V.cabinetOverview = function (st, host) {
     var Gov = SL.data.governance;
 
     host.appendChild(el('div', { class: 'view-head' }, [

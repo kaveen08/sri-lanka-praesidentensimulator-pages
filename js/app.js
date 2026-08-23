@@ -209,6 +209,9 @@
         'Wird jedes Quartal neu zugeteilt und für Maßnahmen ausgegeben'),
       stat('Sitze', st.seatsGov + '/225', null, st.seatsGov >= 150 ? 'var(--green)' : (st.seatsGov >= 113 ? 'var(--amber)' : 'var(--red)'),
         'Ab 113 einfache, ab 150 Zweidrittelmehrheit'),
+      stat('Amtszeit', (st.termNumber || 1) + '/' + (st.termLimit === null ? '∞' : (st.termLimit || 2)), null,
+        st.termLimit === null ? 'var(--amber)' : 'var(--cy-bright)',
+        'Nächste reguläre Wahl: Ende ' + (st.termEndYear || SL.data.baseline.META.termEndYear)),
       el('div', { class: 'hsep' }),
       stat('Wachstum', U.n1(i.growth) + ' %', null, i.growth >= 3 ? 'var(--green)' : 'var(--amber)'),
       stat('Inflation', U.n1(i.inflation) + ' %', null, i.inflation <= 7 ? 'var(--green)' : 'var(--red)'),
@@ -221,9 +224,17 @@
         st.streetPressure <= 40 ? 'var(--green)' : (st.streetPressure <= 65 ? 'var(--amber)' : 'var(--red)'),
         'Protestdruck. Ab 88 wird es gefährlich.'),
       el('div', { id: 'turn-actions' }, [
+        el('button', { class: 'ghost tiny', text: 'Spielstände', onclick: showSaveManager }),
         el('button', { class: 'ghost tiny', text: 'Speichern', onclick: function () {
-          if (St.save(st)) X.toast('good', 'Gespeichert', 'Spielstand im Browser abgelegt.');
-          else X.toast('bad', 'Fehler', 'Speichern nicht möglich.');
+          St.saveNow(st).then(function (result) {
+            if (result.backend) {
+              X.toast('good', 'Gespeichert', '„' + ((St.activeSlot() || {}).name || 'Spielstand') + '“ wurde aktualisiert.');
+            } else if (result.local) {
+              X.toast('warn', 'Nur im Browser gespeichert', 'Das lokale Backend ist derzeit nicht erreichbar.');
+            } else {
+              X.toast('bad', 'Fehler', 'Speichern nicht möglich.');
+            }
+          });
         } }),
         el('button', {
           class: 'primary', text: st.gameOver ? 'Amtszeit beendet' : 'Quartal abschließen ▸',
@@ -272,8 +283,42 @@
     St.save(st);
     A.render();
     (res.messages || []).forEach(function (m) { X.toast(m.kind, m.title, m.text); });
+    if (res.outcomes && res.outcomes.length) { showQuarterOutcomes(res); return; }
+    finishTurnFlow(res);
+  }
+
+  function finishTurnFlow(res) {
     if (st.gameOver) { A.go('report'); showGameOver(); return; }
+    if (res.election && res.election.won) { showElection(res.election); return; }
     if (res.event) showEvent();
+  }
+
+  function showQuarterOutcomes(res) {
+    var cards = res.outcomes.map(function (o) {
+      var eff = {};
+      (o.effects || []).forEach(function (e) { eff[e.k] = e.v; });
+      return el('div', { class: 'quarter-outcome ' + o.kind }, [
+        el('div', { class: 'qo-marker', text: o.kind === 'good' ? 'ERFOLG' : 'RISIKO' }),
+        el('div', { class: 'qo-main' }, [
+          el('div', { class: 'row gap8 wrap' }, [
+            el('strong', { class: 'qo-title', text: o.title }),
+            o.actor ? X.badge(o.actor, o.kind === 'good' ? 'green' : 'red') : null,
+            o.seats ? X.badge(U.sign(o.seats, 0) + ' Sitze', o.seats > 0 ? 'green' : 'red') : null
+          ]),
+          o.source ? el('div', { class: 'xsmall faint', text: 'Quelle: ' + o.source }) : null,
+          el('div', { class: 'small muted qo-text', text: o.text }),
+          Object.keys(eff).length ? X.effectChips(eff, 4) : null
+        ])
+      ]);
+    });
+    var modal = X.modal({
+      title: 'Folgen des Quartals', tag: U.qLabel(st.year, st.q), tagCls: res.outcomes.some(function (o) { return o.kind === 'bad'; }) ? 'amber' : 'green', sticky: true,
+      body: el('div', { class: 'col gap10' }, [
+        el('div', { class: 'small muted', text: 'Ihre früheren Entscheidungen und die Arbeit des Staatsapparats haben sichtbare Folgen.' }),
+        el('div', { class: 'quarter-outcomes' }, cards)
+      ]),
+      actions: function (close) { return [el('button', { class: 'primary', text: 'Weiter', onclick: function () { close(); finishTurnFlow(res); } })]; }
+    });
   }
 
   function showEvent() {
@@ -306,7 +351,7 @@
     var go = st.gameOver;
     var ev = E.evaluate(st);
     X.modal({
-      title: go.title, tag: 'AMTSZEIT BEENDET', tagCls: go.kind === 'reelected' ? 'green' : 'red', sticky: true,
+      title: go.title, tag: 'REGIERUNGSZEIT BEENDET', tagCls: 'red', sticky: true,
       body: el('div', { class: 'col gap12' }, [
         el('div', { style: { fontSize: '13px', lineHeight: '1.7' }, text: go.text }),
         el('div', { class: 'row gap16 center' }, [
@@ -321,8 +366,31 @@
       actions: function (close) {
         return [
           el('button', { class: 'ghost', text: 'Bericht ansehen', onclick: close }),
-          el('button', { class: 'primary', text: 'Neue Amtszeit', onclick: function () { St.clearSave(); location.reload(); } })
+          el('button', { class: 'primary', text: 'Neue Karriere', onclick: function () { close(); newCareerDialog(); } })
         ];
+      }
+    });
+  }
+
+  function showElection(result) {
+    X.modal({
+      title: result.title, tag: 'WAHLSIEG', tagCls: 'green', sticky: true,
+      body: el('div', { class: 'col gap12' }, [
+        el('div', { style: { fontSize: '13px', lineHeight: '1.7' }, text: result.text }),
+        el('div', { class: 'row gap16 center' }, [
+          el('div', { class: 'report-grade', style: { color: 'var(--green)' }, text: U.n1(result.vote) + '%' }),
+          el('div', { class: 'col' }, [
+            el('div', { class: 'hud-label', text: 'Neue Amtszeit' }),
+            el('div', { class: 'mono', style: { fontSize: '18px', color: 'var(--cy-bright)' }, text: st.termNumber + '. Mandat' }),
+            el('div', { class: 'small muted', text: 'Nächste reguläre Wahl Ende ' + st.termEndYear })
+          ])
+        ]),
+        st.termLimit === null
+          ? X.note('Die Amtszeitbegrenzung ist aufgehoben. Sie dürfen auch danach wieder kandidieren.', 'warn')
+          : X.note('Es gilt weiterhin die Begrenzung auf ' + st.termLimit + ' Amtszeiten.')
+      ]),
+      actions: function (close) {
+        return [el('button', { class: 'primary', text: 'Weiterregieren', onclick: close })];
       }
     });
   }
@@ -384,7 +452,8 @@
               el('li', { text: 'Leere Devisenreserven: erneute Zahlungsunfähigkeit.' }),
               el('li', { text: 'Druck der Straße über 88: Rücktritt wie 2022.' }),
               el('li', { text: 'Verlust der Mehrheit und der Zustimmung: Amtsenthebung.' }),
-              el('li', { text: 'Und ganz normal: die Wahl im Herbst 2029.' })
+              el('li', { text: 'Regelmäßige Präsidentschaftswahlen: Verlieren Sie, endet Ihre Regierungszeit.' }),
+              el('li', { text: 'Nach zwei Amtszeiten greift die Begrenzung, solange Sie sie nicht verfassungsrechtlich aufgehoben haben.' })
             ])
           ])
         ]),
@@ -398,128 +467,153 @@
     });
   }
 
-  /* Auswahl unter den gespeicherten Amtszeiten. */
-  function slotScreen() {
-    function rows(close) {
-      var list = St.listSlots();
-      if (!list.length) { close(); startScreen(); return null; }
-      return el('div', { class: 'col gap8' }, list.map(function (s) {
-        return el('div', { class: 'ev-opt', onclick: function () {
-          var loaded = St.loadSlot(s.id);
-          if (!loaded) { X.toast('bad', 'Nicht lesbar', 'Dieser Spielstand lässt sich nicht laden.'); return; }
-          st = loaded; E.recomputeIndex(st);
-          close(); A.render();
-        } }, [
-          el('div', { class: 'row', style: { justifyContent: 'space-between', alignItems: 'baseline' } }, [
-            el('div', { class: 'eo-t', text: s.name }),
-            el('div', { class: 'mono xsmall muted', text: U.qLabel(s.year, s.q) })
-          ]),
-          el('div', { class: 'row gap6 wrap', style: { marginTop: '6px' } }, [
-            X.badge('Quartal ' + ((s.turn || 0) + 1), 'cy'),
-            s.approvalOverall !== undefined ? X.badge('Zustimmung ' + U.n0(s.approvalOverall) + ' %', '') : null,
-            s.pc !== undefined ? X.badge(U.n0(s.pc) + ' PK', '') : null,
-            s.gameOver ? X.badge('beendet', 'red') : null
-          ]),
-          el('div', { class: 'row gap6', style: { marginTop: '8px' } }, [
-            el('button', { class: 'ghost tiny', text: 'Umbenennen', onclick: function (e) {
-              e.stopPropagation();
-              var name = window.prompt('Neuer Name für diesen Spielstand:', s.name);
-              if (name === null) return;
-              St.renameSlot(s.id, name);
-              close(); slotScreen();
-            } }),
-            el('button', { class: 'ghost tiny', text: 'Löschen', onclick: function (e) {
-              e.stopPropagation();
-              if (!window.confirm('„' + s.name + '“ endgültig löschen?')) return;
-              St.deleteSlot(s.id);
-              close();
-              if (St.hasSave()) slotScreen(); else startScreen();
-            } })
-          ])
-        ]);
-      }));
-    }
-
-    var box = X.modal({
-      title: 'Gespeicherte Amtszeiten', tag: 'Auswahl', sticky: true,
-      body: el('div', { class: 'col gap12' }, [
-        el('div', { style: { fontSize: '13px', lineHeight: '1.7' } },
-          'Jede Amtszeit liegt auf einem eigenen Platz. Wählen Sie einen aus, um dort weiterzuspielen.'),
-        el('div', { id: 'slot-list' })
-      ]),
-      actions: function (close) {
-        return [
-          el('button', { class: 'ghost', text: 'Zurück', onclick: function () { close(); startScreen(); } }),
-          el('button', { class: 'primary', text: 'Neue Amtszeit', onclick: function () { close(); newTermScreen(); } })
-        ];
-      }
-    });
-    var host = box.node.querySelector('#slot-list');
-    var content = rows(box.close);
-    if (content) host.appendChild(content);
+  function playedAt(value) {
+    if (!value) return 'unbekannt';
+    try { return new Date(value).toLocaleString('de-CH', { dateStyle: 'medium', timeStyle: 'short' }); }
+    catch (e) { return value; }
   }
 
-  /* Eine neue Amtszeit bekommt einen eigenen Platz und einen Namen,
-     damit sie die vorhandenen nicht überschreibt. */
-  function newTermScreen() {
-    var input = el('input', { type: 'text', placeholder: 'z. B. Zweiter Anlauf', maxlength: '60',
-      style: { width: '100%', padding: '9px 11px', fontSize: '13px' } });
-    X.modal({
-      title: 'Neue Amtszeit', tag: '2026–2029', sticky: true,
-      body: el('div', { class: 'col gap12' }, [
-        el('div', { style: { fontSize: '13px', lineHeight: '1.7' } },
-          'Der Spielstand bekommt einen eigenen Platz. Vorhandene Amtszeiten bleiben erhalten.'),
-        el('div', { class: 'col gap6' }, [
-          el('div', { class: 'hud-label', text: 'Name des Spielstands (optional)' }),
-          input
-        ])
+  function loadSlot(slot, manager) {
+    St.loadSlot(slot).then(function (loaded) {
+      st = loaded; E.recomputeIndex(st); St.save(st);
+      manager.close(); A.render();
+      X.toast('good', 'Spielstand geladen', '„' + slot.name + '“ · ' + U.qLabel(st.year, st.q));
+    }, function (error) {
+      X.toast('bad', 'Laden fehlgeschlagen', error.message || 'Der Spielstand ist nicht erreichbar.');
+    });
+  }
+
+  function renameSlotDialog(slot, manager, startMode) {
+    var input = el('input', { type: 'text', value: slot.name, maxlength: '60', 'aria-label': 'Name des Spielstands' });
+    var dialog = X.modal({
+      title: 'Spielstand umbenennen', tag: U.qLabel(slot.year, slot.q),
+      body: el('div', { class: 'col gap10' }, [
+        el('label', { class: 'hud-label', text: 'Neuer Name' }), input,
+        el('div', { class: 'xsmall faint', text: 'Der Spielstand selbst und sein letzter Spielzeitpunkt bleiben unverändert.' })
       ]),
+      actions: function (close) { return [
+        el('button', { class: 'ghost', text: 'Abbrechen', onclick: close }),
+        el('button', { class: 'primary', text: 'Umbenennen', onclick: function () {
+          if (!input.value.trim()) { X.toast('bad', 'Name fehlt', 'Bitte geben Sie einen Namen ein.'); return; }
+          St.renameSlot(slot.id, input.value).then(function () {
+            close(); manager.close(); startMode ? startScreen() : showSaveManager();
+          });
+        } })
+      ]; }
+    });
+    setTimeout(function () { input.focus(); input.select(); }, 0);
+    return dialog;
+  }
+
+  function deleteSlotDialog(slot, manager, startMode) {
+    var current = St.activeSlot();
+    var deletingCurrent = !!(current && current.id === slot.id);
+    X.modal({
+      title: 'Spielstand löschen?', tag: 'NICHT RÜCKGÄNGIG', tagCls: 'red',
+      body: el('div', { class: 'col gap10' }, [
+        el('div', { class: 'small', text: '„' + slot.name + '“ (' + U.qLabel(slot.year, slot.q) + ') wird im Browser und im gemeinsamen Backend gelöscht.' }),
+        X.note('Andere gespeicherte Stände bleiben erhalten.', 'warn')
+      ]),
+      actions: function (close) { return [
+        el('button', { class: 'ghost', text: 'Abbrechen', onclick: close }),
+        el('button', { class: 'danger', text: 'Endgültig löschen', onclick: function () {
+          St.deleteSlot(slot.id).then(function () {
+            close(); manager.close();
+            if (deletingCurrent && !startMode) location.reload();
+            else startMode ? startScreen() : showSaveManager();
+          });
+        } })
+      ]; }
+    });
+  }
+
+  function newCareerDialog(parentClose) {
+    var suggested = 'Neue Amtszeit · ' + new Date().toLocaleDateString('de-CH');
+    var input = el('input', { type: 'text', value: suggested, maxlength: '60', 'aria-label': 'Name des neuen Spielstands' });
+    X.modal({
+      title: 'Neue Amtszeit', tag: 'NEUER SPIELSTAND',
+      body: el('div', { class: 'col gap10' }, [
+        el('label', { class: 'hud-label', text: 'Name des Spielstands' }), input,
+        X.note('Ihre vorhandenen Spielstände werden nicht überschrieben oder gelöscht.', 'good')
+      ]),
+      actions: function (close) { return [
+        el('button', { class: 'ghost', text: 'Abbrechen', onclick: close }),
+        el('button', { class: 'primary', text: 'Amtszeit beginnen', onclick: function () {
+          if (!input.value.trim()) { X.toast('bad', 'Name fehlt', 'Bitte geben Sie einen Namen ein.'); return; }
+          st = St.create({}); E.recomputeIndex(st); St.beginSlot(st, input.value);
+          St.log(st, 'info', 'Amtsübernahme. Das IWF-Programm läuft, die kombinierte fünfte und sechste Überprüfung wurde im Mai 2026 freigegeben.');
+          St.saveNow(st); close(); if (parentClose) parentClose(); A.render(); briefing();
+        } })
+      ]; }
+    });
+    setTimeout(function () { input.focus(); input.select(); }, 0);
+  }
+
+  function renderSaveManager(available, startMode) {
+    var manager;
+    var currentSlot = St.activeSlot();
+    var shownActiveId = !startMode && currentSlot ? currentSlot.id : available.activeSlotId;
+    var slots = (available.slots || []).slice().sort(function (a, b) {
+      return Date.parse(b.lastPlayedAt || b.savedAt || 0) - Date.parse(a.lastPlayedAt || a.savedAt || 0);
+    });
+    var cards = slots.length ? slots.map(function (slot) {
+      var active = shownActiveId === slot.id;
+      return el('div', { class: 'save-slot' + (active ? ' active' : '') }, [
+        el('div', { class: 'save-slot-main' }, [
+          el('div', { class: 'row gap8 wrap' }, [
+            el('strong', { class: 'save-slot-name', text: slot.name }),
+            active ? X.badge('zuletzt aktiv', 'green') : null,
+            slot.source === 'backend' ? X.badge('gemeinsam', 'cy') : X.badge('Browser', 'amber')
+          ]),
+          el('div', { class: 'save-slot-meta' }, [
+            el('span', { text: U.qLabel(slot.year, slot.q) }),
+            el('span', { text: (slot.termNumber || 1) + '. Amtszeit' }),
+            el('span', { text: 'Zuletzt gespielt: ' + playedAt(slot.lastPlayedAt || slot.savedAt) })
+          ])
+        ]),
+        el('div', { class: 'save-slot-actions' }, [
+          el('button', { class: 'tiny primary', text: 'Laden', onclick: function () { loadSlot(slot, manager); } }),
+          el('button', { class: 'tiny ghost', text: 'Umbenennen', onclick: function () { renameSlotDialog(slot, manager, startMode); } }),
+          el('button', { class: 'tiny danger', text: 'Löschen', onclick: function () { deleteSlotDialog(slot, manager, startMode); } })
+        ])
+      ]);
+    }) : [el('div', { class: 'save-empty', text: 'Noch kein Spielstand vorhanden. Beginnen Sie unten eine neue Amtszeit.' })];
+
+    var body = el('div', { class: 'col gap12' }, [
+      startMode ? el('div', { class: 'small muted', style: { lineHeight: '1.65' }, text: 'Wählen Sie einen gespeicherten Stand oder beginnen Sie eine neue Amtszeit. Jeder Stand behält seinen eigenen Namen, Fortschritt und letzten Spielzeitpunkt.' }) : null,
+      el('div', { class: 'row gap8 wrap' }, [
+        available.backend ? X.badge('Gemeinsames Backend verbunden', 'green') : X.badge('Backend offline · Browser-Speicher', 'amber'),
+        X.badge(slots.length + (slots.length === 1 ? ' Spielstand' : ' Spielstände'), 'cy')
+      ]),
+      el('div', { class: 'save-slot-list' }, cards)
+    ]);
+    manager = X.modal({
+      title: startMode ? 'Sri Lanka Präsidentensimulator' : 'Spielstände verwalten',
+      tag: 'SAVE-SLOTS', sticky: !!startMode, body: body,
       actions: function (close) {
-        return [
-          el('button', { class: 'ghost', text: 'Zurück', onclick: function () {
-            close();
-            if (St.hasSave()) slotScreen(); else startScreen();
-          } }),
-          el('button', { class: 'primary', text: 'Amtszeit anlegen', onclick: function () {
-            st = St.create({});
-            E.recomputeIndex(st);
-            St.log(st, 'info', 'Amtsübernahme. Das IWF-Programm läuft, die kombinierte fünfte und sechste Überprüfung wurde im Mai 2026 freigegeben.');
-            St.beginSlot(st, input.value);
-            close(); A.render(); briefing();
-          } })
-        ];
+        var actions = [];
+        if (!startMode) actions.push(el('button', { class: 'ghost', text: 'Schließen', onclick: close }));
+        if (!available.backend) actions.push(el('button', { class: 'ghost', text: 'Backend erneut verbinden', onclick: function () { close(); startMode ? startScreen() : showSaveManager(); } }));
+        actions.push(el('button', { class: 'primary', text: 'Neue Amtszeit', onclick: function () { newCareerDialog(close); } }));
+        return actions;
       }
+    });
+    return manager;
+  }
+
+  function showSaveManager() {
+    St.loadAvailable().then(function (available) { renderSaveManager(available, false); }, function () {
+      renderSaveManager({ slots: [], backend: false, activeSlotId: null }, false);
     });
   }
 
   function startScreen() {
-    var has = St.hasSave();
-    X.modal({
-      title: 'Sri Lanka Präsidentensimulator', tag: '2026–2029', sticky: true,
-      body: el('div', { class: 'col gap12' }, [
-        el('div', { style: { fontSize: '13px', lineHeight: '1.7' } },
-          'Sri Lanka hat außergewöhnlich gute Voraussetzungen: hohe Alphabetisierung, kostenlose Bildung und Gesundheitsversorgung, ' +
-          'eine strategische Lage an den wichtigsten Schifffahrtsrouten, Häfen, eine große Diaspora. ' +
-          'Und es verwandelt diese Vorteile zu schlecht in Produktivität, Wohlstand und einen gemeinsamen Staat. Ändern Sie das.'),
-        el('div', { class: 'row gap10 wrap' }, [
-          X.badge('Haushalt', 'cy'), X.badge('Verfassung', 'blue'), X.badge('Ethnie, Religion, Kaste, Sprache', 'red'),
-          X.badge('Provinzen & Kommunen', 'violet'), X.badge('Militär', ''), X.badge('Ministerien', 'lime'), X.badge('Klima', 'green')
-        ])
-      ]),
-      actions: function (close) {
-        var btns = [];
-        if (has) {
-          btns.push(el('button', { text: 'Gespeicherten Stand fortsetzen', onclick: function () {
-            close(); slotScreen();
-          } }));
-        }
-        btns.push(el('button', { class: 'primary', text: 'Neue Amtszeit beginnen', onclick: function () {
-          close(); newTermScreen();
-        } }));
-        return btns;
-      }
+    St.loadAvailable().then(function (available) { renderSaveManager(available, true); }, function () {
+      renderSaveManager({ slots: [], backend: false, activeSlotId: null }, true);
     });
   }
+
+  A.newCareer = newCareerDialog;
 
   /* ---------------------------------------------------------
      Startvorgang
@@ -532,7 +626,6 @@
       'Schadensbilanz Zyklon Ditwah: 4,1 Mrd. USD',
       'Parlament: 225 Sitze, Regierungsfraktion 159',
       'Maßnahmenkatalog: ' + E.all().length + ' Einträge',
-      St.usesBackend() ? 'Spielstandablage: Dateien neben dem Programm' : 'Spielstandablage: Browser dieses Geräts',
       'Verbindung zum Präsidialsekretariat hergestellt'
     ];
     var box = U.$('#boot .bt-lines');
@@ -554,11 +647,7 @@
 
   window.addEventListener('DOMContentLoaded', function () {
     buildViews();
-    /* Zuerst klaeren, ob es eine Ablage auf dem Server gibt und ob dort
-       Staende liegen, die dieser Browser nicht kennt. Erst danach die
-       Startmeldungen -- sonst behauptet die Zeile zur Spielstandablage
-       etwas, das noch gar nicht feststeht. */
-    St.syncFromBackend().then(boot, boot);
+    boot();
   });
 
 })(SL.app = SL.app || {});
