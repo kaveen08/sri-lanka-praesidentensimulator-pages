@@ -12,7 +12,7 @@
       desc: 'Sri Lanka gibt seit Jahrzehnten deutlich weniger für Bildung aus als vergleichbare Länder. Der Weg auf 4 Prozent des BIP bedeutet über 900 Mrd. LKR jährlich statt der heutigen Größenordnung.',
       party: ['NPP', 'SJB', 'FSP'], need: 'simple', pc: 16, lag: 6,
       fiscal: { exp: 320 },
-      eff: { education: 20, skillsMatch: 8, brainDrain: -6, humanCapitalX: 0, growth: 0.18 },
+      eff: { education: 20, skillsMatch: 8, brainDrain: -6, growth: 0.18 },
       grp: { youth: 14, unions: 10, sinhalaUrban: 9, sinhalaRural: 8, intl: -6 },
       risk: 'Der größte einzelne Ausgabenblock, den Sie freiwillig aufmachen können. Der IWF wird nach der Gegenfinanzierung fragen.',
       tags: ['Bildung', 'Haushalt']
@@ -51,7 +51,7 @@
       tags: ['Bildung']
     },
     {
-      id: 'ed_private_uni', cat: 'education', sub: 'Hochschulen',
+      id: 'ed_private_uni', fline: 'corp', cat: 'education', sub: 'Hochschulen',
       title: 'Private Hochschulen regulieren und zulassen',
       desc: 'Ein klarer Akkreditierungsrahmen für private Universitäten, verbunden mit Stipendienpflichten für einkommensschwache Studierende. Studentenverbände und die JVP-Tradition lehnen private Hochschulbildung grundsätzlich ab.',
       party: ['NDF', 'SJB'], need: 'simple', pc: 22, lag: 6,
@@ -196,7 +196,7 @@
       tags: ['Gesundheit']
     },
     {
-      id: 'he_ncd', cat: 'health', sub: 'Prävention',
+      id: 'he_ncd', fline: 'nontax', cat: 'health', sub: 'Prävention',
       title: 'Vorsorge gegen Diabetes und Herzkrankheiten',
       desc: 'Zuckersteuer, Nährwertampel auf Verpackungen, Werbebeschränkungen für Kinder und flächendeckende Vorsorgeuntersuchungen. Nichtübertragbare Krankheiten verursachen den größten Teil der Krankheitslast.',
       party: ['NPP', 'SJB'], need: 'simple', pc: 10, lag: 6,
@@ -218,7 +218,7 @@
       tags: ['Gesundheit', 'Regional']
     },
     {
-      id: 'he_insurance', cat: 'health', sub: 'Finanzierung',
+      id: 'he_insurance', fline: 'nontax', cat: 'health', sub: 'Finanzierung',
       title: 'Ergänzende Krankenversicherung für Zusatzleistungen',
       desc: 'Eine beitragsfinanzierte Versicherung für Wahlleistungen und private Behandlung, ohne die kostenlose Grundversorgung anzutasten. Soll private Zuzahlungen kalkulierbar machen, die heute viele Haushalte in die Armut treiben.',
       party: ['NDF', 'SJB'], need: 'simple', pc: 14, lag: 6,
@@ -322,7 +322,7 @@
       tags: ['Migration', 'Devisen']
     },
     {
-      id: 'so_diaspora_return', cat: 'social', sub: 'Migration',
+      id: 'so_diaspora_return', fline: 'paye', cat: 'social', sub: 'Migration',
       title: 'Rückkehrprogramm für ausgewanderte Fachkräfte',
       desc: 'Steuerliche Anreize, Anerkennung ausländischer Abschlüsse, Forschungsstipendien und Unterstützung bei der Wohnungssuche für Ärzte, Ingenieure und IT-Fachkräfte, die zurückkehren wollen.',
       party: ['SJB', 'NPP', 'NDF'], need: 'exec', pc: 6, lag: 6,

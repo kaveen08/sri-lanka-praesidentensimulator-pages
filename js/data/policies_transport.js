@@ -19,7 +19,7 @@
       tags: ['Verkehr', 'Verwaltung', 'Schlüsselmaßnahme']
     },
     {
-      id: 'tr_integrated_ticket', cat: 'transport', sub: 'Steuerung',
+      id: 'tr_integrated_ticket', fline: 'nontax', cat: 'transport', sub: 'Steuerung',
       title: 'Ein Ticket für Bahn, Bus und Provinzverkehr',
       desc: 'Kontaktlose Karte und App für das gesamte Netz, Umsteigen ohne neuen Fahrschein, einheitlicher Entfernungstarif. Beendet außerdem das Bargeldsystem im Bus, das eine der verlässlichsten Einnahmequellen für Schwarzgeld im Verkehrsgewerbe ist.',
       party: ['NPP', 'NDF', 'SJB'], need: 'simple', pc: 12, lag: 4,
@@ -42,7 +42,7 @@
       tags: ['Verkehr', 'Staatsbetriebe']
     },
     {
-      id: 'tr_bus_regulation', cat: 'transport', sub: 'Steuerung',
+      id: 'tr_bus_regulation', fline: 'nontax', cat: 'transport', sub: 'Steuerung',
       title: 'Privatbusse: Konzession statt Wettrennen',
       desc: 'Rund 20.000 private Busse konkurrieren auf denselben Linien um Fahrgäste, was zu Rasen, Überladung und Unfällen führt. Künftig gebündelte Linienkonzessionen mit festem Fahrplan, Fahrzeugstandard und Fahrerlohn statt Tageseinnahme.',
       party: ['NPP', 'SJB'], need: 'simple', pc: 16, lag: 4,
@@ -113,7 +113,7 @@
       tags: ['Verkehr', 'Schiene', 'Regionalentwicklung']
     },
     {
-      id: 'tr_rail_freight', cat: 'transport', sub: 'Schiene',
+      id: 'tr_rail_freight', fline: 'nontax', cat: 'transport', sub: 'Schiene',
       title: 'Güterverkehr von der Straße auf die Schiene',
       desc: 'Containerterminals in Colombo, Kandy, Vavuniya und Trincomalee, feste Trassen für Güterzüge und ein Anschluss an den Hafen Colombo. Entlastet die Fernstraßen, senkt Transportkosten und verlängert die Lebensdauer des Straßennetzes.',
       party: ['NPP', 'NDF', 'SJB'], need: 'simple', pc: 12, lag: 6,
@@ -187,7 +187,7 @@
       tags: ['Verkehr', 'Colombo', 'Klima']
     },
     {
-      id: 'tr_threewheeler', cat: 'transport', sub: 'Stadtverkehr',
+      id: 'tr_threewheeler', fline: 'vehicle', cat: 'transport', sub: 'Stadtverkehr',
       title: 'Dreiräder regulieren und in das Netz einbinden',
       desc: 'Taxameterpflicht, Registrierung, Versicherung und Anbindung an die Fahrplanauskunft als Zubringer zur nächsten Haltestelle. Über eine Million Menschen leben von diesem Gewerbe, das bislang nahezu unreguliert ist.',
       party: ['NPP', 'SJB'], need: 'simple', pc: 10, lag: 3,

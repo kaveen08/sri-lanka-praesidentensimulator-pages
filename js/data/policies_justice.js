@@ -206,7 +206,7 @@
       tags: ['Antikorruption', 'Justiz']
     },
     {
-      id: 'ju_customs_integrity', cat: 'justice', sub: 'Korruption',
+      id: 'ju_customs_integrity', fline: 'customs', cat: 'justice', sub: 'Korruption',
       title: 'Zoll: Rotation, Vermögensprüfung, Risikoauswahl',
       desc: 'Pflichtrotation auf allen Abfertigungsposten, jährliche Vermögensprüfung für Zollbedienstete, computergestützte Risikoauswahl statt Ermessen bei der Kontrolle, Kameras an allen Abfertigungslinien und eine interne Revision, die dem Ministerium und nicht der Behördenleitung berichtet.',
       party: ['NPP', 'SJB', 'NDF'], need: 'simple', pc: 20, lag: 4,
@@ -217,7 +217,7 @@
       tags: ['Antikorruption', 'Einnahmen', 'Schlüsselmaßnahme']
     },
     {
-      id: 'ju_single_window', cat: 'justice', sub: 'Korruption',
+      id: 'ju_single_window', fline: 'customs', cat: 'justice', sub: 'Korruption',
       title: 'Digitales Handelsfenster für den gesamten Außenhandel',
       desc: 'Ein einziges elektronisches Portal für alle Einfuhr- und Ausfuhrgenehmigungen, über alle beteiligten Behörden hinweg, mit nachvollziehbaren Bearbeitungszeiten. Wo kein Schalter mehr ist, gibt es auch nichts mehr über den Schalter zu schieben.',
       party: ['NPP', 'NDF', 'SJB'], need: 'simple', pc: 14, lag: 5,
@@ -228,7 +228,7 @@
       tags: ['Antikorruption', 'Digitalisierung', 'Handel']
     },
     {
-      id: 'ju_beneficial_owners', cat: 'justice', sub: 'Korruption',
+      id: 'ju_beneficial_owners', fline: 'nontax', cat: 'justice', sub: 'Korruption',
       title: 'Register der wirtschaftlich Berechtigten',
       desc: 'Wer hinter einer Gesellschaft wirklich steht, wird eintragungspflichtig und für Behörden, Banken und Journalisten einsehbar. Voraussetzung dafür, Scheinfirmen bei öffentlichen Aufträgen und bei der Vermögensbesteuerung überhaupt zu erkennen.',
       party: ['NPP', 'SJB', 'FSP'], need: 'simple', pc: 15, lag: 4,
@@ -239,7 +239,7 @@
       tags: ['Antikorruption', 'Transparenz']
     },
     {
-      id: 'ju_soe_audit', cat: 'justice', sub: 'Korruption',
+      id: 'ju_soe_audit', fline: 'nontax', cat: 'justice', sub: 'Korruption',
       title: 'Staatsbetriebe zu testierten Abschlüssen zwingen',
       desc: 'Jedes Staatsunternehmen legt binnen sechs Monaten nach Geschäftsjahresende einen geprüften Abschluss vor, sonst werden Vorstandsbezüge und Transfers gesperrt. Bei mehreren großen Betrieben fehlen testierte Zahlen seit Jahren, und ohne Zahlen ist jede Sanierung ein Blindflug.',
       party: ['NPP', 'SJB', 'NDF'], need: 'simple', pc: 13, lag: 3,
@@ -262,7 +262,7 @@
       tags: ['Antikorruption', 'Transparenz']
     },
     {
-      id: 'ju_land_titles_complete', cat: 'justice', sub: 'Rechtszugang',
+      id: 'ju_land_titles_complete', fline: 'nontax', cat: 'justice', sub: 'Rechtszugang',
       title: 'Titelregistrierung Bim Saviya zu Ende bringen',
       desc: 'Das 1998 begonnene Programm zur Umstellung von Urkunden- auf Titelregistrierung deckt nach über zwei Jahrzehnten nur einen Bruchteil der Grundstücke ab. Vollständige Vermessung, digitales Kataster, beschleunigte Streitschlichtung, vorrangig im Norden und Osten und im Plantagensektor.',
       party: ['NPP', 'SJB', 'ITAK', 'CWC'], need: 'simple', pc: 19, lag: 6,

@@ -3,8 +3,7 @@
    ============================================================ */
 (function (V) {
   'use strict';
-  var U = SL.util, X = SL.ui, M = SL.model, E = SL.engine, G = SL.data.geo;
-  var Gov = SL.data.governance || { MINISTRIES: [], INSTITUTIONS: [] }, el = U.el, svg = U.svg;
+  var U = SL.util, X = SL.ui, M = SL.model, E = SL.engine, G = SL.data.geo, el = U.el, svg = U.svg;
 
   /* Filterzustand je Ansicht */
   var FS = {};
@@ -376,20 +375,7 @@
     var mapHost = el('div');
     function drawMap() {
       U.clear(mapHost);
-      var s = svg('svg', {
-        class: 'lk-map', width: 252, height: 428, viewBox: G.VIEWBOX,
-        role: 'img', 'aria-label': 'Sri Lanka mit seinen neun Provinzen und Provinzhauptstädten'
-      });
-
-      var defs = svg('defs');
-      var glow = svg('radialGradient', { id: 'lk-map-glow', cx: '50%', cy: '47%', r: '58%' }, [
-        svg('stop', { offset: '0%', 'stop-color': '#22d3ee', 'stop-opacity': '.12' }),
-        svg('stop', { offset: '72%', 'stop-color': '#22d3ee', 'stop-opacity': '.035' }),
-        svg('stop', { offset: '100%', 'stop-color': '#22d3ee', 'stop-opacity': '0' })
-      ]);
-      defs.appendChild(glow);
-      s.appendChild(defs);
-      s.appendChild(svg('ellipse', { class: 'map-glow', cx: 102, cy: 169, rx: 99, ry: 166, fill: 'url(#lk-map-glow)' }));
+      var s = svg('svg', { class: 'lk-map', width: 252, height: 428, viewBox: G.VIEWBOX });
 
       /* Flächen, eingefärbt nach Entwicklungsstand */
       G.PROVINCES.forEach(function (p) {
@@ -398,7 +384,6 @@
         var fill = 'rgba(' + Math.round(10 + t * 20) + ',' + Math.round(40 + t * 150) + ',' + Math.round(60 + t * 160) + ',' + (0.32 + t * 0.5) + ')';
         s.appendChild(svg('path', {
           class: 'prov' + (selProv === p.k ? ' sel' : ''), d: p.path, fill: fill,
-          'fill-rule': 'evenodd', 'data-province': p.k,
           onclick: function () { selProv = (selProv === p.k ? null : p.k); drawMap(); drawInfo(); }
         }, [svg('title', { textContent: p.name + ' — ' + p.capital })]));
       });
@@ -418,8 +403,8 @@
       });
 
       /* Maßstab und Nordpfeil */
-      s.appendChild(svg('path', { class: 'map-deco', d: 'M 111 329 L 111 335 M 111 332 L 181 332 M 181 329 L 181 335' }));
-      s.appendChild(svg('text', { class: 'map-scale', x: 146, y: 326, 'text-anchor': 'middle', textContent: '100 km' }));
+      s.appendChild(svg('path', { class: 'map-deco', d: 'M 150 316 L 150 322 M 150 319 L 189 319 M 189 316 L 189 322' }));
+      s.appendChild(svg('text', { class: 'map-scale', x: 169, y: 313, 'text-anchor': 'middle', textContent: '100 km' }));
       s.appendChild(svg('path', { class: 'map-deco', d: 'M 24 32 L 24 14 M 24 14 L 21 19 M 24 14 L 27 19' }));
       s.appendChild(svg('text', { class: 'map-scale', x: 24, y: 41, 'text-anchor': 'middle', textContent: 'N' }));
 
@@ -670,65 +655,23 @@
      PARTEIEN
      ========================================================= */
   V.parties = function (st, host) {
-    var P = SL.data.parties.PARTIES;
-    var seats = st.parliament && st.parliament.seats ? st.parliament.seats : {};
-    var selectedKey = FS.partySelected || 'NPP';
-    var selected = SL.data.parties.BY_KEY[selectedKey] || P[0];
-    var selectedSeats = seats[selected.k] === undefined ? selected.seats : seats[selected.k];
     host.appendChild(el('div', { class: 'view-head' }, [
       el('div', {}, [
-        el('h2', { text: 'Parlament und Parteien' }),
-        el('div', { class: 'sub', text: 'Die Sitzverteilung verändert sich im Spiel. Wählen Sie eine Farbe im Plenarsaal oder in der Legende, um die Fraktion genauer anzusehen.' })
+        el('h2', { text: 'Parteien und ihre Vorschläge' }),
+        el('div', { class: 'sub', text: 'Sitzverteilung der 2024 gewählten Legislaturperiode und die Programmpunkte, die die Parteien öffentlich vertreten. Über die Filter im Maßnahmenkatalog können Sie gezielt nach Vorschlägen einer Partei suchen.' })
       ])
     ]));
 
-    var talks = E.canCourtSeats(st);
-    host.appendChild(X.panel('Interaktive Sitzverteilung', [
-      el('div', { class: 'parliament-layout' }, [
-        el('div', {}, [
-          X.parliamentChart(st, selected.k, function (key) { FS.partySelected = key; SL.app.render(); }),
-          el('div', { class: 'parliament-legend' }, P.filter(function (p) { return (seats[p.k] || 0) > 0; }).map(function (p) {
-            return el('button', {
-              class: 'parl-legend-item' + (selected.k === p.k ? ' active' : ''),
-              onclick: function () { FS.partySelected = p.k; SL.app.render(); }
-            }, [
-              el('span', { class: 'parl-swatch', style: { background: p.color, boxShadow: '0 0 8px ' + p.color } }),
-              el('span', { text: p.name }),
-              el('strong', { class: 'mono', text: String(seats[p.k] || 0) })
-            ]);
-          }))
-        ]),
-        el('div', { class: 'parliament-detail' }, [
-          el('div', { class: 'hud-label', text: 'Ausgewählte Fraktion' }),
-          el('div', { class: 'parl-party-name', style: { color: selected.color }, text: selected.full }),
-          el('div', { class: 'parl-big-seat mono', text: selectedSeats + ' Sitze' }),
-          el('div', { class: 'small muted', style: { lineHeight: '1.6' }, text: selected.ideology + ' · ' + selected.lead }),
-          el('div', { class: 'majority-grid' }, [
-            el('div', {}, [el('span', { class: 'hud-label', text: 'Einfache Mehrheit' }), el('strong', { text: st.seatsGov >= 113 ? 'erreicht' : (113 - st.seatsGov) + ' fehlen' })]),
-            el('div', {}, [el('span', { class: 'hud-label', text: 'Zweidrittelmehrheit' }), el('strong', { text: st.seatsGov >= 150 ? 'erreicht' : (150 - st.seatsGov) + ' fehlen' })])
-          ]),
-          el('button', { class: 'primary', disabled: !talks.ok, title: talks.ok ? 'Kostet 14 politisches Kapital; Ausgang abhängig von Zustimmung und Legitimität.' : talks.why,
-            text: 'Fraktionsgespräche führen · 14 PK', onclick: function () {
-              var result = E.courtSeats(st); SL.state.save(st);
-              if (result.success) X.toast('good', 'Neue Unterstützung', result.seats + ' Sitze für die Regierungsfraktion gewonnen.');
-              else X.toast(result.ok ? 'warn' : 'bad', result.ok ? 'Ohne Ergebnis' : 'Nicht möglich', result.ok ? 'Kein Abgeordneter wechselte die Fraktion.' : result.why);
-              SL.app.render();
-            } }),
-          el('div', { class: 'xsmall faint', text: 'Ein Versuch pro Quartal. Erfolg ist nicht garantiert.' })
-        ])
-      ])
-    ], { class: 'parliament-panel' }));
-
+    var P = SL.data.parties.PARTIES;
     host.appendChild(el('div', { class: 'grid g2' }, P.map(function (p) {
       var pols = E.all().filter(function (x) { return (x.party || []).indexOf(p.k) >= 0; });
       var done = pols.filter(function (x) { return st.enacted[x.id]; }).length;
-      var liveSeats = seats[p.k] === undefined ? p.seats : seats[p.k];
       return el('div', { class: 'party-card corner-frame' }, [
         el('div', { class: 'pt-bar', style: { background: p.color, boxShadow: '0 0 14px ' + p.color } }),
         el('div', { class: 'row gap8 wrap', style: { marginLeft: '6px' } }, [
           el('span', { class: 'pt-name', style: { color: p.color }, text: p.name }),
           p.gov ? X.badge('Regierung', 'green') : X.badge('Opposition', ''),
-          X.badge(liveSeats + ' Sitze', 'cy'),
+          X.badge(p.seats + ' Sitze', 'cy'),
           el('span', { class: 'grow' }),
           X.badge(done + '/' + pols.length + ' umgesetzt', done > 0 ? 'green' : '')
         ]),
@@ -748,83 +691,6 @@
     })));
   };
 
-  /* =========================================================
-     KABINETT UND INSTITUTIONEN
-     ========================================================= */
-  V.cabinet = function (st, host) {
-    host.appendChild(el('div', { class: 'view-head' }, [
-      el('div', {}, [
-        el('h2', { text: 'Kabinett und Institutionen' }),
-        el('div', { class: 'sub', text: 'Leistung, Fehlschläge und Skandale werden bei jedem Quartalswechsel fortgeschrieben. Namen der Kabinettsmitglieder sind für die Simulation erfunden.' })
-      ])
-    ]));
-
-    host.appendChild(el('div', { class: 'cabinet-grid' }, Gov.MINISTRIES.map(function (def) {
-      var c = st.cabinet[def.k], can = E.canDismissMinister(st, def.k);
-      var tone = c.performance >= 62 ? 'g' : (c.performance >= 40 ? 'a' : 'r');
-      return el('div', { class: 'minister-card corner-frame' + (c.scandal ? ' scandal' : '') }, [
-        el('div', { class: 'minister-top' }, [
-          el('div', {}, [
-            el('div', { class: 'hud-label', text: def.office }),
-            el('div', { class: 'minister-name', text: c.name }),
-            el('div', { class: 'xsmall faint', text: def.ministry })
-          ]),
-          c.scandal ? X.badge('Skandal', 'red') : (c.failures >= 2 ? X.badge('unter Druck', 'amber') : X.badge('im Amt', 'green'))
-        ]),
-        X.meter({ label: 'Leistung', value: c.performance, min: 0, max: 100, text: U.n0(c.performance) + '/100', tone: tone }),
-        el('div', { class: 'minister-stats' }, [
-          el('span', { text: 'Erfolge ' + c.successes }), el('span', { text: 'Versagen ' + c.failures }),
-          el('span', { text: 'seit Q' + (c.appointedTurn + 1) })
-        ]),
-        c.scandal ? el('div', { class: 'minister-alert' }, [
-          el('strong', { text: c.scandal.title }), el('span', { text: c.scandal.text })
-        ]) : (c.failures >= 2 || c.performance < 38 ? el('div', { class: 'minister-alert warn', text: 'Wiederholte Fehler oder schwache Ressortführung rechtfertigen eine direkte Entlassung.' }) : null),
-        el('button', { class: 'tiny danger', disabled: !can.ok, title: can.ok ? 'Entlassung und Neubesetzung kosten 6 PK.' : can.why,
-          text: 'Direkt entlassen · 6 PK', onclick: function () { confirmDismiss(st, def, c); } })
-      ]);
-    })));
-
-    host.appendChild(X.panel('Unabhängige und staatliche Institutionen', [
-      el('div', { class: 'institution-grid' }, Gov.INSTITUTIONS.map(function (def) {
-        var i = st.institutions[def.k];
-        return el('div', { class: 'institution-card' }, [
-          el('div', { class: 'row gap8' }, [el('strong', { text: def.name }), el('span', { class: 'grow' }), X.badge(U.n0(i.performance) + '/100', i.performance >= 60 ? 'green' : (i.performance >= 40 ? 'amber' : 'red'))]),
-          X.meter({ label: 'Funktionsfähigkeit', value: i.performance, min: 0, max: 100, text: U.n0(i.performance) }),
-          el('div', { class: 'xsmall faint', text: i.successes + ' Erfolge · ' + i.failures + ' Versagen' })
-        ]);
-      }))
-    ]));
-
-    var history = (st.governanceHistory || []).slice(0, 8);
-    if (history.length) host.appendChild(X.panel('Jüngste Leistungsberichte', [
-      el('div', { class: 'governance-history' }, history.map(function (h) {
-        return el('div', { class: 'gov-history-item ' + h.kind }, [
-          el('span', { class: 'hud-label', text: 'Q' + (h.turn + 1) }),
-          el('div', {}, [el('strong', { text: h.title }), el('div', { class: 'small muted', text: h.text })])
-        ]);
-      }))
-    ]));
-  };
-
-  function confirmDismiss(st, def, c) {
-    X.modal({
-      title: c.name + ' entlassen?', tag: 'KABINETTSUMBILDUNG', tagCls: 'red',
-      body: el('div', { class: 'col gap10' }, [
-        el('div', { class: 'small', style: { lineHeight: '1.65' }, text: 'Sie entlassen ' + c.name + ' unmittelbar aus dem Ressort „' + def.ministry + '“. Eine neue, ebenfalls simulierte Person wird eingesetzt.' }),
-        c.scandal ? X.note(c.scandal.title + ': ' + c.scandal.text, 'bad') : X.note('Leistung ' + U.n0(c.performance) + '/100 · ' + c.failures + ' dokumentierte Fehlschläge.', 'warn'),
-        X.note('Kosten: 6 politisches Kapital. Die Neubesetzung startet mit neutraler Leistungsbewertung.')
-      ]),
-      actions: function (close) { return [
-        el('button', { class: 'ghost', text: 'Im Amt lassen', onclick: close }),
-        el('button', { class: 'danger', text: 'Jetzt entlassen', onclick: function () {
-          var r = E.dismissMinister(st, def.k); close();
-          if (r.ok) { SL.state.save(st); X.toast('good', 'Kabinett neu besetzt', r.newName + ' übernimmt das Ressort.'); SL.app.render(); }
-          else X.toast('bad', 'Nicht möglich', r.why);
-        } })
-      ]; }
-    });
-  }
-
   function showPartyPolicies(st, p) {
     var pols = E.all().filter(function (x) { return (x.party || []).indexOf(p.k) >= 0; });
     var body = el('div', { class: 'col gap10' }, [
@@ -833,8 +699,7 @@
         return pcard(st, x, function () { SL.app.render(); });
       }))
     ]);
-    var liveSeats = st.parliament && st.parliament.seats && st.parliament.seats[p.k] !== undefined ? st.parliament.seats[p.k] : p.seats;
-    X.modal({ title: 'Vorschläge: ' + p.name, tag: liveSeats + ' SITZE', body: body,
+    X.modal({ title: 'Vorschläge: ' + p.name, tag: p.seats + ' SITZE', body: body,
       actions: function (close) { return [el('button', { class: 'ghost', text: 'Schließen', onclick: close })]; } });
   }
 
@@ -884,8 +749,7 @@
     host.appendChild(el('div', { class: 'view-head' }, [
       el('div', {}, [
         el('h2', { text: go ? 'Abschlussbericht' : 'Zwischenbericht' }),
-        el('div', { class: 'sub', text: go ? go.text : 'Stand ' + U.qLabel(st.year, st.q) +
-          ' in Ihrer ' + (st.termNumber || 1) + '. Amtszeit. So stünde Ihre Bilanz, wenn die Amtszeit heute endete.' })
+        el('div', { class: 'sub', text: go ? go.text : 'Stand ' + U.qLabel(st.year, st.q) + '. So stünde Ihre Bilanz, wenn die Amtszeit heute endete.' })
       ])
     ]));
 
@@ -901,7 +765,7 @@
             return X.meter({ label: p.k, value: p.v, min: 0, max: 100, text: U.n0(p.v) });
           }))
         ]),
-        go ? X.note(go.title + ': ' + go.text, 'bad') : null
+        go ? X.note(go.title + ': ' + go.text, go.kind === 'reelected' ? '' : 'bad') : null
       ]),
       X.panel('Bilanz in Zahlen', [
         el('table', { class: 'dtable' }, [
@@ -922,27 +786,99 @@
       ])
     ]));
 
-    if (st.electionHistory && st.electionHistory.length) {
-      host.appendChild(el('div', { style: { marginTop: '14px' } }, [
-        X.panel('Wahlhistorie', [
-          el('table', { class: 'dtable' }, [
-            el('thead', {}, el('tr', {}, [
-              el('th', { text: 'Wahljahr' }), el('th', { text: 'Kandidatur' }),
-              el('th', { class: 'num', text: 'Stimmen' }), el('th', { text: 'Ergebnis' })
-            ])),
-            el('tbody', {}, st.electionHistory.map(function (e) {
-              return el('tr', {}, [
-                el('td', { text: String(e.year) }),
-                el('td', { text: e.eligible ? ('für ' + ((e.term || 1) + 1) + '. Amtszeit') : 'durch Amtszeitlimit gesperrt' }),
-                el('td', { class: 'num', text: e.vote === null || e.vote === undefined ? '—' : U.n1(e.vote) + ' %' }),
-                el('td', { style: { color: e.won ? 'var(--green)' : 'var(--red)' },
-                  text: e.won ? ('gewonnen · ' + e.wonTerm + '. Amtszeit') : (e.eligible ? 'verloren' : 'nicht wählbar') })
-              ]);
-            }))
-          ])
-        ])
-      ]));
+    /* -----------------------------------------------------
+       Internationaler Vergleich
+
+       Die Gesamtbewertung oben enthält einen Bereich, der auf
+       srilankischen Größen beruht und sich nicht vergleichen
+       lässt. Hier steht deshalb eine eigene Einteilung, die für
+       alle sieben Länder gleich berechnet wird, ausschließlich
+       aus vergleichbaren Indikatoren. Sri Lanka wird nach
+       derselben Formel bewertet wie die anderen.
+       ----------------------------------------------------- */
+    var BM = SL.data.benchmarks;
+    var profiles = { LK: BM.profile(st, 'LK') };
+    BM.COUNTRIES.forEach(function (c) { profiles[c.k] = BM.profile(st, c.k); });
+
+    var order = [{ k: 'LK', name: 'Sri Lanka', short: 'LK', color: 'var(--cy-bright)', self: true }]
+      .concat(BM.COUNTRIES);
+
+    function cell(v, best, worst) {
+      if (v === null) return el('td', { class: 'num faint', title: 'Für dieses Land nicht sinnvoll erhebbar.', text: '–' });
+      var tone = v >= best - 4 ? 'var(--green)' : (v <= worst + 4 ? 'var(--red)' : '');
+      return el('td', { class: 'num', style: { color: tone } }, [U.n0(v)]);
     }
+
+    host.appendChild(el('div', { style: { marginTop: '14px' } }, [
+      X.panel('Wo Sri Lanka im internationalen Vergleich steht', [
+        el('div', { class: 'small muted', style: { marginBottom: '10px' } },
+          'Acht Bereiche, für alle sieben Länder nach derselben Formel aus denselben Indikatoren berechnet. ' +
+          'Die Vergleichswerte sind gerundete Größenordnungen für 2025/26 und bilden Verhältnisse ab, keine amtliche Statistik. ' +
+          'Grün ist der beste Wert der Zeile, rot der schlechteste.'),
+        el('div', { class: 'tscroll' }, [
+          el('table', { class: 'dtable bm-table' }, [
+            el('thead', {}, el('tr', {}, [el('th', { text: 'Bereich' })].concat(
+              order.map(function (c) {
+                return el('th', { class: 'num' + (c.self ? ' self' : ''), title: c.desc || 'Ihr laufender Stand',
+                  style: { color: c.color } }, [c.short]);
+              })).concat([el('th', { class: 'num', text: 'Rang' })]))),
+            el('tbody', {}, BM.AREAS.map(function (a, ai) {
+              var vals = order.map(function (c) { return profiles[c.k].parts[ai].v; });
+              var real = vals.filter(function (v) { return v !== null; });
+              var best = Math.max.apply(null, real), worst = Math.min.apply(null, real);
+              var lk = profiles.LK.parts[ai].v;
+              var pos = real.filter(function (v) { return v > lk; }).length + 1;
+              return el('tr', {}, [el('td', { title: a.desc, text: a.k })]
+                .concat(vals.map(function (v) { return cell(v, best, worst); }))
+                .concat([el('td', { class: 'num' }, [
+                  el('span', { class: 'bm-rank ' + (pos <= 2 ? 'g' : (pos <= 4 ? 'a' : 'r')),
+                    text: pos + '/' + real.length })
+                ])]));
+            }).concat([
+              (function () {
+                var vals = order.map(function (c) { return profiles[c.k].total; });
+                var best = Math.max.apply(null, vals), worst = Math.min.apply(null, vals);
+                var pos = vals.filter(function (v) { return v > profiles.LK.total; }).length + 1;
+                return el('tr', { class: 'bm-total' }, [el('td', { text: 'Gesamt' })]
+                  .concat(vals.map(function (v) { return cell(v, best, worst); }))
+                  .concat([el('td', { class: 'num' }, [
+                    el('span', { class: 'bm-rank ' + (pos <= 2 ? 'g' : (pos <= 4 ? 'a' : 'r')),
+                      text: pos + '/' + vals.length })
+                  ])]));
+              })()
+            ]))
+          ])
+        ]),
+        /* Wo Sri Lanka am weitesten vorn und am weitesten zurück liegt */
+        (function () {
+          var gaps = BM.AREAS.map(function (a, ai) {
+            var lk = profiles.LK.parts[ai].v;
+            var others = BM.COUNTRIES.map(function (c) { return profiles[c.k].parts[ai].v; })
+              .filter(function (v) { return v !== null; });
+            var avg = others.reduce(function (x, y) { return x + y; }, 0) / others.length;
+            return { k: a.k, desc: a.desc, gap: lk - avg, lk: lk, avg: avg };
+          }).sort(function (x, y) { return y.gap - x.gap; });
+          var top = gaps[0], bottom = gaps[gaps.length - 1];
+          return el('div', { class: 'grid g2', style: { marginTop: '12px' } }, [
+            X.note((top.gap >= 0
+                ? 'Stärkster Bereich: ' + top.k + '. Sri Lanka liegt mit ' + U.n0(top.lk) +
+                  ' Punkten um ' + U.n0(top.gap) + ' über dem Durchschnitt der sechs Vergleichsländer (' + U.n0(top.avg) + ').'
+                : 'Kleinster Rückstand: ' + top.k + '. Sri Lanka liegt bei ' + U.n0(top.lk) +
+                  ' Punkten, der Durchschnitt der sechs Vergleichsländer bei ' + U.n0(top.avg) +
+                  ', also ' + U.n0(-top.gap) + ' Punkte darüber. Hier ist der Abstand am kleinsten.')
+              + ' ' + top.desc, top.gap >= 0 ? 'good' : ''),
+            X.note('Größter Rückstand: ' + bottom.k + '. Sri Lanka liegt bei ' + U.n0(bottom.lk) +
+              ' Punkten, der Durchschnitt der sechs Vergleichsländer bei ' + U.n0(bottom.avg) +
+              ', also ' + U.n0(Math.abs(bottom.gap)) + ' Punkte darüber. ' + bottom.desc, 'warn')
+          ]);
+        })(),
+        X.note('Zur Einordnung: Sri Lanka erwirtschaftet rund 4.500 USD je Kopf im Jahr. Indien liegt bei 2.900, China bei 13.400, Deutschland bei 54.000, die Schweiz bei 100.000. Ein Rückstand gegenüber der Schweiz ist nicht dasselbe wie ein Rückstand gegenüber Indien: Sri Lanka wirtschaftet mit einem Zwanzigstel der schweizerischen Mittel. Singapur war 1965 ärmer als Ceylon.', ''),
+        el('div', { class: 'row right', style: { marginTop: '10px' } }, [
+          el('button', { class: 'tiny ghost', text: 'Vergleich je Einzelindikator',
+            onclick: function () { SL.views._bmOn = true; SL.app.go('indicators'); } })
+        ])
+      ])
+    ]));
 
     var enacted = Object.keys(st.enacted).map(E.byId).filter(Boolean);
     host.appendChild(el('div', { style: { marginTop: '14px' } }, [
@@ -961,8 +897,8 @@
 
     if (go) {
       host.appendChild(el('div', { class: 'row center', style: { marginTop: '18px' } }, [
-        el('button', { class: 'primary', text: 'Neue Karriere beginnen', onclick: function () {
-          SL.app.newCareer();
+        el('button', { class: 'primary', text: 'Neue Amtszeit beginnen', onclick: function () {
+          SL.state.clearSave(); location.reload();
         } })
       ]));
     }

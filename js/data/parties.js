@@ -155,14 +155,6 @@
         'Vollständige Entmilitarisierung des Nordens',
         'Ablehnung innerstaatlicher Wahrheitskommissionen ohne internationale Beteiligung'
       ]
-    },
-    {
-      k: 'OTH', name: 'Übrige', full: 'Unabhängige und kleinere Listen',
-      lead: 'verschiedene', seats: 1, color: '#64748b', gov: false,
-      ideology: 'Unabhängig / regional', base: [],
-      stance: { austerity: 0, devolution: 0, market: 0, nationalism: 0, climate: 0, military: 0 },
-      desc: 'Ein einzelnes Mandat außerhalb der größeren Fraktionen. Bei knappen Mehrheiten können auch unabhängige Abgeordnete entscheidend werden.',
-      proposals: []
     }
   ];
 

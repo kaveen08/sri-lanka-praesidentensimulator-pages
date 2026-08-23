@@ -125,18 +125,6 @@
       tags: ['Antikorruption', 'Wahlrecht']
     },
     {
-      id: 'st_remove_term_limit', cat: 'state', sub: 'Wahlrecht',
-      title: 'Amtszeitbegrenzung aufheben',
-      desc: 'Die verfassungsrechtliche Begrenzung auf zwei Präsidentschaftsperioden entfällt. Der amtierende Präsident darf nach jeder Amtszeit erneut kandidieren, solange er die Wahl gewinnt.',
-      party: ['SLPP'], need: 'twothirds', pc: 38, lag: 1,
-      fiscal: {},
-      eff: { ruleOfLaw: -12, legitimacy: -9, corruption: -4, pressFree: -3, sinhalaPress: -4 },
-      grp: { military: 5, sinhalaRural: 3, sangha: 2, sinhalaUrban: -11, youth: -16, intl: -18, business: -6, tamilNE: -5 },
-      risk: 'Der Schritt ermöglicht unbegrenzte Wiederkandidaturen, wird aber als Machtkonzentration verstanden. Jede weitere Wahl muss trotzdem gewonnen werden; Niederlage, Amtsenthebung und Krisen bleiben möglich.',
-      special: 'term_limit_removed',
-      tags: ['Verfassung', 'Wahlrecht', 'Hochrisiko'], excl: ['st_term_limit']
-    },
-    {
       id: 'st_term_limit', cat: 'state', sub: 'Wahlrecht',
       title: 'Amtszeitbegrenzung auf zwei Perioden festschreiben',
       desc: 'Kein Präsident darf mehr als zwei Amtszeiten ausüben. Die Aufhebung dieser Grenze durch den 18. Verfassungszusatz gilt vielen als Beginn des institutionellen Verfalls.',
@@ -144,9 +132,8 @@
       fiscal: {},
       eff: { ruleOfLaw: 5, legitimacy: 5 },
       grp: { youth: 5, sinhalaUrban: 4, intl: 4 },
-      risk: 'Gilt auch für Sie: Nach der zweiten Amtszeit ist keine weitere Kandidatur möglich.',
-      special: 'term_limit_two',
-      tags: ['Verfassung'], excl: ['st_remove_term_limit']
+      risk: 'Gilt auch für Sie.',
+      tags: ['Verfassung']
     },
     {
       id: 'st_vote16', cat: 'state', sub: 'Wahlrecht',

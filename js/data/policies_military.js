@@ -62,7 +62,7 @@
       tags: ['Militär', 'Versöhnung']
     },
     {
-      id: 'mil_business_exit', cat: 'military', sub: 'Struktur',
+      id: 'mil_business_exit', fline: 'nontax', cat: 'military', sub: 'Struktur',
       title: 'Militärische Wirtschaftsbetriebe abwickeln',
       desc: 'Die Streitkräfte betreiben Hotels, Restaurants, Golfplätze, Reisebüros, Farmen und Baufirmen. Sie verzerren den Wettbewerb, entziehen dem Fiskus Einnahmen und binden Soldaten in fachfremden Aufgaben.',
       party: ['NPP', 'SJB', 'NDF', 'ITAK'], need: 'simple', pc: 20, lag: 5,
@@ -108,7 +108,7 @@
       tags: ['Militär', 'Menschenrechte', 'Hochrisiko']
     },
     {
-      id: 'mil_un_peacekeeping', cat: 'military', sub: 'Einsatz',
+      id: 'mil_un_peacekeeping', fline: 'grants', cat: 'military', sub: 'Einsatz',
       title: 'Beteiligung an UN-Friedensmissionen ausbauen',
       desc: 'Mehr srilankische Kontingente in Blauhelmeinsätzen. Bringt Devisen, internationale Ausbildung und Ansehen, setzt aber eine saubere Überprüfung der Entsandten voraus.',
       party: ['NDF', 'SJB', 'NPP'], need: 'exec', pc: 6, lag: 4,

@@ -69,13 +69,13 @@
       desc: 'Ein staatlicher Reservefonds, kombiniert mit Rückversicherung und Katastrophenanleihen, damit nicht jeder Sturm einen Nachtragshaushalt und neue Schulden erzwingt.',
       party: ['NPP', 'NDF', 'SJB'], need: 'simple', pc: 9, lag: 5,
       fiscal: { exp: 34 },
-      eff: { climateRes: 9, disasterPrep: 6, debtStabiliserX: 0, imfCompl: 5, socialProt: 4 },
+      eff: { climateRes: 9, disasterPrep: 6, imfCompl: 5, socialProt: 4 },
       grp: { intl: 12, business: 7, farmers: 7, sinhalaRural: 5 },
       risk: 'Prämien fallen jedes Jahr an, der Nutzen zeigt sich nur im Katastrophenjahr. Genau deshalb wird ein solcher Fonds oft wieder geplündert.',
       tags: ['Klima', 'Finanzen']
     },
     {
-      id: 'cl_climate_finance', cat: 'climate', sub: 'Finanzierung',
+      id: 'cl_climate_finance', fline: 'grants', cat: 'climate', sub: 'Finanzierung',
       title: 'Internationale Klimafinanzierung erschließen',
       desc: 'Aufbau einer Fachstelle, die Anträge für Green Climate Fund, Loss-and-Damage-Fonds und Anpassungsprogramme professionell stellt. Sri Lanka lässt hier seit Jahren Mittel liegen, weil die Antragskapazität fehlt.',
       party: ['NPP', 'SJB', 'NDF'], need: 'exec', pc: 4, lag: 5,
@@ -99,7 +99,7 @@
 
     /* ---------- Minderung ---------- */
     {
-      id: 'cl_ev_transition', cat: 'climate', sub: 'Verkehr',
+      id: 'cl_ev_transition', fline: 'excise', cat: 'climate', sub: 'Verkehr',
       title: 'Umstellung auf Elektromobilität fördern',
       desc: 'Niedrigere Einfuhrabgaben für Elektrofahrzeuge, Ladeinfrastruktur an Hauptstrecken, Umstellung von Bussen und Behördenfahrzeugen. Treibstoffimporte sind eine der größten Belastungen der Zahlungsbilanz.',
       party: ['NPP', 'SJB', 'NDF'], need: 'simple', pc: 8, lag: 6,
@@ -143,7 +143,7 @@
       tags: ['Umwelt', 'Fischerei']
     },
     {
-      id: 'cl_waste', cat: 'climate', sub: 'Kreislauf',
+      id: 'cl_waste', fline: 'nontax', cat: 'climate', sub: 'Kreislauf',
       title: 'Abfallwirtschaft und Kunststoffvermeidung',
       desc: 'Getrenntsammlung, Kompostierung, Deponiesanierung, Pfandsystem für Getränkeverpackungen und Verbot besonders schädlicher Einwegkunststoffe. Der Einsturz der Deponie Meethotamulla 2017 tötete Dutzende Menschen.',
       party: ['NPP', 'SJB'], need: 'simple', pc: 8, lag: 6,
@@ -154,7 +154,7 @@
       tags: ['Umwelt', 'Kommunal']
     },
     {
-      id: 'cl_carbon_price', cat: 'climate', sub: 'Instrumente',
+      id: 'cl_carbon_price', fline: 'excise', cat: 'climate', sub: 'Instrumente',
       title: 'CO2-Abgabe auf fossile Brennstoffe',
       desc: 'Eine Abgabe auf Kohle, Diesel und Schweröl in der Stromerzeugung und Industrie, deren Aufkommen zweckgebunden in Anpassung und Sozialausgleich fließt.',
       party: ['NPP', 'SJB'], need: 'simple', pc: 15, lag: 3,

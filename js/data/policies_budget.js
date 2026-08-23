@@ -9,7 +9,7 @@
 
     /* ---------- Einnahmen: Steuern auf Vermögen und hohe Einkommen ---------- */
     {
-      id: 'bu_wealth_tax', cat: 'budget', sub: 'Vermögen',
+      id: 'bu_wealth_tax', fline: 'nontax', cat: 'budget', sub: 'Vermögen',
       title: 'Vermögensteuer auf große Vermögen',
       desc: 'Eine jährliche Abgabe von 1 Prozent auf Nettovermögen über 500 Mio. LKR, ausgenommen selbstgenutztes Wohneigentum und Betriebsvermögen unter einer Schwelle. Erfordert ein funktionierendes Vermögensregister.',
       party: ['FSP', 'NPP'], need: 'simple', pc: 18, lag: 4,
@@ -21,7 +21,7 @@
       tags: ['Steuern', 'Umverteilung']
     },
     {
-      id: 'bu_property_tax', cat: 'budget', sub: 'Vermögen',
+      id: 'bu_property_tax', fline: 'nontax', cat: 'budget', sub: 'Vermögen',
       title: 'Bundesweite Grundsteuer auf Basis aktueller Werte',
       desc: 'Eine wertbasierte Grundsteuer mit Freibetrag für kleine Wohnhäuser, erhoben durch die Kommunen und mit ihnen geteilt. Der IWF fordert seit Jahren eine echte Immobilienbesteuerung.',
       party: ['NDF', 'SJB', 'NPP'], need: 'simple', pc: 20, lag: 6,
@@ -33,7 +33,7 @@
       tags: ['Steuern', 'IWF']
     },
     {
-      id: 'bu_capital_gains', cat: 'budget', sub: 'Vermögen',
+      id: 'bu_capital_gains', fline: 'nontax', cat: 'budget', sub: 'Vermögen',
       title: 'Kapitalertragsteuer auf Aktien und Grundstücke',
       desc: 'Besteuerung realisierter Gewinne aus dem Verkauf von Wertpapieren und Immobilien, mit Haltefristen und Freibeträgen für kleine Anleger.',
       party: ['NPP', 'SJB', 'FSP'], need: 'simple', pc: 12, lag: 3,
@@ -45,7 +45,7 @@
       tags: ['Steuern']
     },
     {
-      id: 'bu_inheritance', cat: 'budget', sub: 'Vermögen',
+      id: 'bu_inheritance', fline: 'nontax', cat: 'budget', sub: 'Vermögen',
       title: 'Erbschaftsteuer wieder einführen',
       desc: 'Die Erbschaftsteuer wurde 2002 abgeschafft. Wiedereinführung mit hohem Freibetrag, Stundungsregeln für Betriebe und landwirtschaftliche Flächen.',
       party: ['FSP', 'NPP'], need: 'simple', pc: 16, lag: 4,
@@ -59,7 +59,7 @@
 
     /* ---------- Einnahmen: Verbrauch und Verhalten ---------- */
     {
-      id: 'bu_sugar_tax', cat: 'budget', sub: 'Verbrauch',
+      id: 'bu_sugar_tax', fline: 'excise', cat: 'budget', sub: 'Verbrauch',
       title: 'Abgabe auf zuckergesüßte Getränke',
       desc: 'Gestaffelte Abgabe nach Zuckergehalt, mit Zweckbindung für Schulmahlzeiten und Vorsorgeprogramme. Doppelter Nutzen für Haushalt und Gesundheit.',
       party: ['NPP', 'SJB'], need: 'simple', pc: 7, lag: 2,
@@ -70,7 +70,7 @@
       tags: ['Steuern', 'Gesundheit']
     },
     {
-      id: 'bu_tobacco_alcohol', cat: 'budget', sub: 'Verbrauch',
+      id: 'bu_tobacco_alcohol', fline: 'excise', cat: 'budget', sub: 'Verbrauch',
       title: 'Tabak- und Alkoholsteuern deutlich anheben',
       desc: 'Anhebung um 25 Prozent mit automatischer Inflationsanpassung. Sri Lanka verliert bei diesen Steuern regelmäßig real an Wert, weil die Sätze nicht angepasst werden.',
       party: ['NPP', 'SJB', 'NDF'], need: 'simple', pc: 8, lag: 1,
@@ -82,7 +82,7 @@
       tags: ['Steuern', 'Gesundheit']
     },
     {
-      id: 'bu_casino_levy', cat: 'budget', sub: 'Verbrauch',
+      id: 'bu_casino_levy', fline: 'excise', cat: 'budget', sub: 'Verbrauch',
       title: 'Abgabe auf Kasinos und Glücksspiel erhöhen',
       desc: 'Höhere Lizenzgebühren und Umsatzabgabe für Kasinos und Wettanbieter, verbunden mit schärferer Aufsicht gegen Geldwäsche.',
       party: ['NPP', 'SJB'], need: 'simple', pc: 6, lag: 2,
@@ -93,7 +93,7 @@
       tags: ['Steuern']
     },
     {
-      id: 'bu_luxury_import', cat: 'budget', sub: 'Verbrauch',
+      id: 'bu_luxury_import', fline: 'customs', cat: 'budget', sub: 'Verbrauch',
       title: 'Sonderabgabe auf Luxusimporte',
       desc: 'Höhere Abgaben auf Fahrzeuge der Oberklasse, Yachten, hochwertige Elektronik und Luxusgüter. Schont Devisen und trifft überwiegend hohe Einkommen.',
       party: ['NPP', 'FSP', 'SB'], need: 'exec', pc: 5, lag: 1,
@@ -107,7 +107,7 @@
 
     /* ---------- Einnahmen: Struktur ---------- */
     {
-      id: 'bu_vat_exempt_cut', cat: 'budget', sub: 'Struktur',
+      id: 'bu_vat_exempt_cut', fline: 'vat', cat: 'budget', sub: 'Struktur',
       title: 'Ausnahmen bei der Mehrwertsteuer streichen',
       desc: 'Die lange Liste befreiter Waren und Dienstleistungen wird auf Grundnahrungsmittel, Gesundheit und Bildung begrenzt. Verbreitert die Basis, ohne den Satz zu erhöhen.',
       party: ['NDF', 'NPP'], need: 'simple', pc: 14, lag: 2,
@@ -119,7 +119,7 @@
       tags: ['Steuern', 'IWF']
     },
     {
-      id: 'bu_tax_holidays_end', cat: 'budget', sub: 'Struktur',
+      id: 'bu_tax_holidays_end', fline: 'corp', cat: 'budget', sub: 'Struktur',
       title: 'Steuerbefreiungen für Großinvestoren beenden',
       desc: 'Auslaufen der pauschalen Befreiungen im Rahmen des Strategic Development Projects Act, künftig nur noch zeitlich befristete und veröffentlichte Vergünstigungen mit Nachweispflicht.',
       party: ['NPP', 'FSP', 'SJB'], need: 'simple', pc: 14, lag: 3,
@@ -131,7 +131,7 @@
       tags: ['Steuern', 'Antikorruption']
     },
     {
-      id: 'bu_customs_reform', cat: 'budget', sub: 'Struktur',
+      id: 'bu_customs_reform', fline: 'customs', cat: 'budget', sub: 'Struktur',
       title: 'Zollverwaltung gegen Unterfakturierung wappnen',
       desc: 'Referenzpreisdatenbank, Scannerkontrollen, Rotation des Personals und Abgleich mit Ausfuhrdaten der Handelspartner. Die Lücke zwischen gemeldeten Importen und Exportstatistiken der Partner ist erheblich.',
       party: ['NPP', 'SJB', 'NDF'], need: 'exec', pc: 9, lag: 4,
@@ -143,7 +143,7 @@
       tags: ['Steuern', 'Antikorruption']
     },
     {
-      id: 'bu_professional_tax', cat: 'budget', sub: 'Struktur',
+      id: 'bu_professional_tax', fline: 'paye', cat: 'budget', sub: 'Struktur',
       title: 'Freiberufler und Selbständige wirksam besteuern',
       desc: 'Ärzte, Anwälte, Architekten und andere Freiberufler zahlen im Verhältnis zu ihrem Einkommen sehr wenig. Meldepflichten für Verbände, Abgleich mit Zahlungsdaten und Mindestbesteuerung.',
       party: ['NPP', 'FSP'], need: 'simple', pc: 15, lag: 4,
@@ -155,7 +155,7 @@
       tags: ['Steuern']
     },
     {
-      id: 'bu_sscl_abolish', cat: 'budget', sub: 'Struktur',
+      id: 'bu_sscl_abolish', fline: 'sscl', cat: 'budget', sub: 'Struktur',
       title: 'Kaskadierende Sozialabgabe SSCL abschaffen',
       desc: 'Die Abgabe wird auf jeder Handelsstufe erhoben und verteuert Vorprodukte mehrfach. Ökonomen halten sie für eine der schädlichsten Steuern des Landes. Abschaffung mit Gegenfinanzierung über die Mehrwertsteuerbasis.',
       party: ['NDF', 'SJB'], need: 'simple', pc: 10, lag: 2,
@@ -166,7 +166,7 @@
       tags: ['Steuern', 'Wirtschaft']
     },
     {
-      id: 'bu_paye_relief', cat: 'budget', sub: 'Entlastung',
+      id: 'bu_paye_relief', fline: 'paye', cat: 'budget', sub: 'Entlastung',
       title: 'Lohnsteuer für mittlere Einkommen senken',
       desc: 'Höherer Grundfreibetrag und flachere Progression im mittleren Bereich. Die Steuerreform von 2022 traf die formell Beschäftigten hart und gilt als Treiber der Auswanderung.',
       party: ['SJB', 'NPP', 'SB'], need: 'simple', pc: 8, lag: 2,
@@ -177,7 +177,7 @@
       tags: ['Steuern', 'Entlastung']
     },
     {
-      id: 'bu_vat_food_relief', cat: 'budget', sub: 'Entlastung',
+      id: 'bu_vat_food_relief', fline: 'vat', cat: 'budget', sub: 'Entlastung',
       title: 'Grundnahrungsmittel von der Mehrwertsteuer befreien',
       desc: 'Reis, Mehl, Milchpulver, Gemüse und Speiseöl werden vollständig befreit, um die Lebenshaltungskosten für ärmere Haushalte zu senken.',
       party: ['SJB', 'FSP', 'SB'], need: 'simple', pc: 7, lag: 1,
@@ -228,7 +228,7 @@
       desc: 'Neu eingestellte Beschäftigte erhalten eine beitragsfinanzierte Altersvorsorge statt der aus dem laufenden Haushalt gezahlten Pension. Bestehende Ansprüche bleiben unberührt.',
       party: ['NDF', 'NPP'], need: 'simple', pc: 22, lag: 6,
       fiscal: { exp: -35 },
-      eff: { debtStabiliserX: 0, socialProt: -3, stateCap: -2, imfCompl: 6 },
+      eff: { socialProt: -3, stateCap: -2, imfCompl: 6 },
       grp: { intl: 14, business: 8, publicSector: -20, unions: -14, youth: -4 },
       risk: 'Die Entlastung kommt erst in Jahrzehnten, der Konflikt sofort. Trotzdem unvermeidlich für die langfristige Tragfähigkeit.',
       tags: ['Sparen', 'Pensionen']
@@ -308,7 +308,7 @@
       desc: 'Verbindliche Obergrenzen für Defizit und Schuldenstand mit klar geregelten Ausnahmen für Naturkatastrophen, überwacht von einem unabhängigen Fiskalrat.',
       party: ['NDF', 'NPP', 'SJB'], need: 'simple', pc: 14, lag: 3,
       fiscal: { exp: 4 },
-      eff: { imfCompl: 12, debtStabiliserX: 0, stateCap: 5, corruption: 3, legitimacy: 4 },
+      eff: { imfCompl: 12, stateCap: 5, corruption: 3, legitimacy: 4 },
       grp: { intl: 18, business: 12, sinhalaUrban: 5, unions: -8 },
       risk: 'Bindet Sie und alle Nachfolger. In einer Rezession kann eine starre Regel prozyklisch wirken.',
       tags: ['Haushalt', 'IWF']

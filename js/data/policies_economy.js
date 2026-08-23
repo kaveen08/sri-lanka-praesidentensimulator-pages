@@ -52,7 +52,7 @@
       tags: ['Industrie', 'Export']
     },
     {
-      id: 'ec_tourism_upmarket', cat: 'economy', sub: 'Tourismus',
+      id: 'ec_tourism_upmarket', fline: 'nontax', cat: 'economy', sub: 'Tourismus',
       title: 'Tourismus auf höherwertige Segmente ausrichten',
       desc: 'Statt reiner Ankunftszahlen zählt der Ertrag pro Gast. Qualitätsstandards, Ausbildung, Naturschutzabgaben, Erschließung von Kulturtourismus im Norden und Osten und ein einheitlicher Marktauftritt.',
       party: ['SJB', 'NDF', 'NPP'], need: 'exec', pc: 7, lag: 6,
@@ -85,7 +85,7 @@
       tags: ['Mittelstand', 'Wachstum']
     },
     {
-      id: 'ec_trade_india', cat: 'economy', sub: 'Handel',
+      id: 'ec_trade_india', fline: 'customs', cat: 'economy', sub: 'Handel',
       title: 'Wirtschaftsabkommen mit Indien vertiefen',
       desc: 'Ausbau des bestehenden Freihandelsabkommens auf Dienstleistungen und Investitionen, gegenseitige Anerkennung von Standards, Landbrücke und Stromverbund. Indien ist der nächstgelegene große Markt und bereits wichtigster Handelspartner.',
       party: ['SJB', 'NDF', 'NPP'], need: 'simple', pc: 20, lag: 6,
@@ -97,7 +97,7 @@
       tags: ['Handel', 'Außenpolitik']
     },
     {
-      id: 'ec_trade_protect', cat: 'economy', sub: 'Handel',
+      id: 'ec_trade_protect', fline: 'customs', cat: 'economy', sub: 'Handel',
       title: 'Schutzzölle für heimische Produktion',
       desc: 'Höhere Einfuhrzölle auf Agrarprodukte und Konsumgüter, die im Land hergestellt werden können, verbunden mit Aufbauhilfen für die betroffenen Branchen.',
       party: ['SB', 'SLPP'], need: 'simple', pc: 10, lag: 3,
@@ -108,7 +108,7 @@
       tags: ['Handel', 'Protektionismus'], excl: ['ec_trade_india']
     },
     {
-      id: 'ec_port_city', cat: 'economy', sub: 'Finanzplatz',
+      id: 'ec_port_city', fline: 'corp', cat: 'economy', sub: 'Finanzplatz',
       title: 'Colombo Port City als Finanzplatz entwickeln',
       desc: 'Eigenes Regelwerk für Finanzdienstleistungen, Streitbeilegung nach internationalem Standard, Ansiedlung von Vermögensverwaltung und Rückversicherung auf dem aufgeschütteten Gelände vor Colombo.',
       party: ['NDF', 'SJB'], need: 'simple', pc: 16, lag: 8,
@@ -142,7 +142,7 @@
       tags: ['Staatsdienst', 'Haushalt']
     },
     {
-      id: 'ec_informal_formalise', cat: 'economy', sub: 'Arbeitsmarkt',
+      id: 'ec_informal_formalise', fline: 'nontax', cat: 'economy', sub: 'Arbeitsmarkt',
       title: 'Informelle Beschäftigung schrittweise formalisieren',
       desc: 'Vereinfachte Registrierung für Kleinstbetriebe, pauschale Abgaben statt komplexer Steuererklärungen, Zugang zu Sozialversicherung und Krediten als Gegenleistung.',
       party: ['NPP', 'SJB'], need: 'simple', pc: 9, lag: 6,
@@ -200,7 +200,7 @@
       tags: ['Landwirtschaft', 'Hochrisiko'], excl: ['ag_fertiliser_smart']
     },
     {
-      id: 'ag_land_titles', cat: 'agri', sub: 'Land',
+      id: 'ag_land_titles', fline: 'nontax', cat: 'agri', sub: 'Land',
       title: 'Landtitel klären und handelbar machen',
       desc: 'Ein großer Teil des Bodens liegt unter staatlichen Zuteilungsurkunden ohne volles Eigentum. Ohne klare Titel gibt es keine Kreditsicherheit und keine Investitionen. Digitales Grundbuch und Umwandlung in echtes Eigentum.',
       party: ['NDF', 'SJB', 'NPP'], need: 'simple', pc: 18, lag: 8,
@@ -258,7 +258,7 @@
       tags: ['Energie', 'IWF']
     },
     {
-      id: 'en_soe_reform', cat: 'energy', sub: 'Staatsbetriebe',
+      id: 'en_soe_reform', fline: 'nontax', cat: 'energy', sub: 'Staatsbetriebe',
       title: 'Staatsbetriebe reformieren statt privatisieren',
       desc: 'Professionelle Aufsichtsräte statt politischer Ernennungen, veröffentlichte Jahresabschlüsse, verbindliche Zielvereinbarungen und harte Budgetgrenzen, aber Eigentum bleibt beim Staat. Die Linie der Regierungspartei.',
       party: ['NPP'], need: 'simple', pc: 14, lag: 6,
@@ -270,7 +270,7 @@
       tags: ['Staatsbetriebe'], excl: ['en_privatise']
     },
     {
-      id: 'en_privatise', cat: 'energy', sub: 'Staatsbetriebe',
+      id: 'en_privatise', fline: 'nontax', cat: 'energy', sub: 'Staatsbetriebe',
       title: 'Verlustreiche Staatsbetriebe teilprivatisieren',
       desc: 'Verkauf von Minderheits- oder Mehrheitsanteilen an SriLankan Airlines, Hotelbeteiligungen und Teilen der Energiewirtschaft, mit Beschäftigungsgarantien für eine Übergangszeit.',
       party: ['NDF'], need: 'simple', pc: 30, lag: 6,
@@ -327,7 +327,7 @@
       tags: ['Energie', 'Staatsbetriebe']
     },
     {
-      id: 'en_fuel_market', cat: 'energy', sub: 'Struktur',
+      id: 'en_fuel_market', fline: 'nontax', cat: 'energy', sub: 'Struktur',
       title: 'Treibstoffmarkt für weitere Anbieter öffnen',
       desc: 'Zusätzliche Lizenzen für Import und Vertrieb, Ende des faktischen Monopols der staatlichen Ölgesellschaft, transparente Preisformel.',
       party: ['NDF'], need: 'exec', pc: 12, lag: 4,
@@ -352,7 +352,7 @@
       tags: ['Antikorruption']
     },
     {
-      id: 'ju_asset_recovery', cat: 'justice', sub: 'Korruption',
+      id: 'ju_asset_recovery', fline: 'nontax', cat: 'justice', sub: 'Korruption',
       title: 'Rückführung von Vermögen aus dem Ausland',
       desc: 'Rechtshilfeabkommen, Beweislastumkehr bei unerklärlichem Vermögen, Zusammenarbeit mit Dubai, Singapur und der Schweiz. Ein zentrales Wahlversprechen, dessen Umsetzung juristisch außerordentlich langwierig ist.',
       party: ['NPP', 'FSP'], need: 'simple', pc: 16, lag: 8,
@@ -435,7 +435,7 @@
       tags: ['Digital', 'Bürgerrechte']
     },
     {
-      id: 'di_tax_digital', cat: 'digital', sub: 'Verwaltung',
+      id: 'di_tax_digital', fline: 'nontax', cat: 'digital', sub: 'Verwaltung',
       title: 'Steuerverwaltung vollständig digitalisieren',
       desc: 'Verpflichtende elektronische Rechnungen, automatischer Datenabgleich zwischen Zoll, Banken, Grundbuch und Finanzamt, Risikoanalyse für Prüfungen. Der wirksamste Hebel gegen Steuerhinterziehung.',
       party: ['NPP', 'SJB', 'NDF'], need: 'simple', pc: 11, lag: 6,
@@ -515,7 +515,7 @@
       tags: ['Schulden', 'Risiko']
     },
     {
-      id: 'fo_diaspora_bonds', cat: 'foreign', sub: 'Diaspora',
+      id: 'fo_diaspora_bonds', fline: 'grants', cat: 'foreign', sub: 'Diaspora',
       title: 'Diaspora-Anleihen und Investitionskanäle',
       desc: 'Anleihen mit attraktiver Verzinsung für Auslandssrilanker, vereinfachte Investitionswege und ein Beirat, der sinhalesische und tamilische Auslandsgemeinden einbezieht.',
       party: ['SJB', 'NPP'], need: 'exec', pc: 9, lag: 5,
@@ -526,7 +526,7 @@
       tags: ['Diaspora', 'Devisen']
     },
     {
-      id: 'fo_china_projects', cat: 'foreign', sub: 'Investitionen',
+      id: 'fo_china_projects', fline: 'grants', cat: 'foreign', sub: 'Investitionen',
       title: 'Chinesische Investitionen gezielt ausweiten',
       desc: 'Neue Vorhaben in Hambantota, Colombo und der Energiewirtschaft, verbunden mit Umschuldungsgesprächen. China ist der größte einzelne bilaterale Gläubiger.',
       party: ['SLPP', 'SB'], need: 'exec', pc: 12, lag: 6,
@@ -548,7 +548,7 @@
       tags: ['Menschenrechte', 'Außenpolitik']
     },
     {
-      id: 'fo_regional_trade', cat: 'foreign', sub: 'Handel',
+      id: 'fo_regional_trade', fline: 'customs', cat: 'foreign', sub: 'Handel',
       title: 'Beitritt zu regionalen Handelsabkommen prüfen und vollziehen',
       desc: 'Anschluss an größere asiatische Wertschöpfungsketten über regionale Abkommen, mit Übergangsfristen für empfindliche Branchen.',
       party: ['NDF', 'SJB'], need: 'simple', pc: 16, lag: 8,

@@ -230,12 +230,14 @@
       ])
     ]));
 
+    var shareUpdaters = [];
     var summary = el('div', { class: 'budget-summary', style: { marginBottom: '14px' } });
     var gapNote = el('div', { style: { marginBottom: '10px' } });
     var strainBox = el('div', { style: { marginBottom: '14px' } });
 
     function refresh() {
       E.recomputeIndex(st);
+      shareUpdaters.forEach(function (f) { f(); });
       var bud = E.budget(st);
       var target = E.primaryTarget(st);
       var gap = (target - bud.primaryPct) / 100 * st.gdpN;   /* fehlender Betrag in LKR Mrd. */
@@ -319,8 +321,37 @@
     function lineRow(line, kind) {
       var cur = kind === 'rev' ? st.budget.rev[line.k] : st.budget.exp[line.k];
       var nowEl = el('div', { class: 'bl-now mono' });
+      var shareEl = el('div', { class: 'bl-share mono' });
       var warnEl = el('div', { class: 'bl-warn' });
       var row;
+
+      /* Anteil dieses Postens an der jeweiligen Gesamtsumme und am BIP.
+         Ein absoluter Betrag sagt wenig, solange man nicht weiß, ob er
+         ein Zwanzigstel oder ein Drittel des Haushalts ausmacht. */
+      var setShare = function () {
+        var bud = E.budget(st);
+        var mine = kind === 'rev' ? bud.revLines[line.k] : bud.expLines[line.k];
+        var pol = E.policyLineDeltas(st);
+        var extra = (kind === 'rev' ? pol.rev[line.k] : pol.exp[line.k]) || 0;
+        var n = (kind === 'rev' ? pol.count.rev[line.k] : pol.count.exp[line.k]) || 0;
+        var total = kind === 'rev' ? bud.totalRev : bud.totalExp;
+        mine = (mine || 0) + extra;
+        var share = total ? mine / total * 100 : 0;
+        var gdp = mine / st.gdpN * 100;
+
+        U.clear(shareEl);
+        U.append(shareEl, [
+          el('span', { class: 'bs-pct', title: 'Anteil an den ' + (kind === 'rev' ? 'Gesamteinnahmen' : 'Gesamtausgaben'),
+            text: U.n1(share) + ' %' }),
+          el('span', { class: 'bs-gdp', title: 'Anteil am Bruttoinlandsprodukt', text: U.n1(gdp) + ' % BIP' }),
+          n ? el('span', {
+            class: 'bs-pol',
+            style: { color: (kind === 'rev' ? (extra > 0 ? 'var(--green)' : 'var(--red)') : 'var(--violet)') },
+            title: n + ' beschlossene Maßnahme' + (n > 1 ? 'n' : '') + ' aus den Ressorts wirken auf diesen Posten.',
+            text: U.sign(extra, 0) + ' aus ' + n + ' Maßnahme' + (n > 1 ? 'n' : '')
+          }) : null
+        ]);
+      };
 
       /* Zeigt neben dem eingestellten Wert an, was davon tatsächlich
          ankommt, und warnt, sobald der Posten überdehnt wird. */
@@ -377,96 +408,89 @@
         el('div', { class: 'bl-base mono', text: U.n0(line.base * sc) }),
         slider,
         nowEl,
+        shareEl,
         warnEl
       ]);
       setNow(cur);
+      setShare();
+      shareUpdaters.push(setShare);
       if (line.k === 'interest') { nowEl.textContent = U.n0(E.interest(st)); nowEl.style.color = 'var(--red)'; }
       return row;
     }
 
-    var revPanel = X.panel('Einnahmen', [
-      el('div', { class: 'bline', style: { borderBottom: '1px solid var(--line-soft)' } }, [
+    function headRow() {
+      return el('div', { class: 'bline bl-head' }, [
         el('div', { class: 'hud-label', text: 'Position' }),
         el('div', { class: 'hud-label', style: { textAlign: 'right' }, text: 'Basis' }),
         el('div', { class: 'hud-label', text: 'Regler' }),
-        el('div', { class: 'hud-label', style: { textAlign: 'right' }, text: 'Neu' })
-      ])
-    ].concat(B.REVENUE.map(function (r) { return lineRow(r, 'rev'); })), { bodyStyle: { padding: '4px 6px 10px' } });
-
-    var expPanel = X.panel('Ausgaben', [
-      el('div', { class: 'bline', style: { borderBottom: '1px solid var(--line-soft)' } }, [
-        el('div', { class: 'hud-label', text: 'Position' }),
-        el('div', { class: 'hud-label', style: { textAlign: 'right' }, text: 'Basis' }),
-        el('div', { class: 'hud-label', text: 'Regler' }),
-        el('div', { class: 'hud-label', style: { textAlign: 'right' }, text: 'Neu' })
-      ])
-    ].concat(B.SPENDING.map(function (e) { return lineRow(e, 'exp'); })), { bodyStyle: { padding: '4px 6px 10px' } });
-
-    host.appendChild(el('div', { class: 'grid g2' }, [revPanel, expPanel]));
-
-    /* Nachvollziehbare finanzielle Wirkung aller Entscheidungen */
-    var finance = E.decisionFinanceSummary(st);
-    var recurringRows = (st.decisionFinance || []).filter(function (entry) {
-      return entry.active !== false && ((entry.recurringPlus || 0) || (entry.recurringMinus || 0));
-    });
-    var oneoffRows = (st.decisionFinance || []).filter(function (entry) {
-      return (entry.oneoffPlus || 0) || (entry.oneoffMinus || 0);
-    }).slice().reverse();
-
-    function balanceCards(summary, suffix) {
-      return el('div', { class: 'decision-balance' }, [
-        el('div', { class: 'db-card plus' }, [
-          el('span', { class: 'hud-label', text: '+ gemacht' }),
-          el('strong', { text: '+ ' + U.lkr(summary.plus) }),
-          el('small', { text: suffix })
-        ]),
-        el('div', { class: 'db-card minus' }, [
-          el('span', { class: 'hud-label', text: '− gemacht' }),
-          el('strong', { text: '− ' + U.lkr(summary.minus) }),
-          el('small', { text: suffix })
-        ]),
-        el('div', { class: 'db-card total ' + (summary.total >= 0 ? 'positive' : 'negative') }, [
-          el('span', { class: 'hud-label', text: 'Total' }),
-          el('strong', { text: U.lkrS(summary.total) }),
-          el('small', { text: suffix })
-        ])
+        el('div', { class: 'hud-label', style: { textAlign: 'right' }, text: 'Neu' }),
+        el('div', { class: 'hud-label', text: 'Anteil · Ressorts' })
       ]);
     }
 
-    function financeTable(rows, recurring) {
-      return rows.length ? el('table', { class: 'dtable decision-finance-table' }, [
-        el('thead', {}, el('tr', {}, [
-          el('th', { text: 'Entscheidung' }), el('th', { text: 'Zeitpunkt' }),
-          el('th', { class: 'num', text: '+' }), el('th', { class: 'num', text: '−' }),
-          el('th', { class: 'num', text: 'Total' })
-        ])),
-        el('tbody', {}, rows.map(function (entry) {
-          var plus = (recurring ? entry.recurringPlus * sc : entry.oneoffPlus) || 0;
-          var minus = (recurring ? entry.recurringMinus * sc : entry.oneoffMinus) || 0;
-          var total = plus - minus;
-          return el('tr', {}, [
-            el('td', {}, [el('strong', { text: entry.title }), entry.decision ? el('div', { class: 'xsmall faint', text: entry.decision }) : null]),
-            el('td', { class: 'mono xsmall', text: entry.year && entry.q ? U.qLabel(entry.year, entry.q) : ('Q' + ((entry.turn || 0) + 1)) }),
-            el('td', { class: 'num', style: { color: plus ? 'var(--green)' : '' }, text: plus ? ('+' + U.lkr(plus)) : '–' }),
-            el('td', { class: 'num', style: { color: minus ? 'var(--red)' : '' }, text: minus ? ('−' + U.lkr(minus)) : '–' }),
-            el('td', { class: 'num', style: { color: total >= 0 ? 'var(--green)' : 'var(--red)' }, text: U.lkrS(total) })
-          ]);
-        }))
-      ]) : el('div', { class: 'faint small', text: 'Noch keine finanzwirksamen Entscheidungen in dieser Kategorie.' });
+    /* Was sich keinem einzelnen Posten zuordnen lässt, wird
+       ausgewiesen statt stillschweigend untergebracht. */
+    function otherRow(kind) {
+      var pol = E.policyLineDeltas(st);
+      var v = kind === 'rev' ? pol.revOther : pol.expOther;
+      if (Math.abs(v) < 0.5) return null;
+      return el('div', { class: 'bline bl-other' }, [
+        el('div', { class: 'bl-name', text: 'Aus Ressortentscheidungen, ohne festen Posten' }),
+        el('div', { class: 'bl-base mono', text: '–' }),
+        el('div', { class: 'xsmall faint', text: 'ergibt sich aus beschlossenen Maßnahmen' }),
+        el('div', { class: 'bl-now mono', style: { color: v > 0 ? 'var(--green)' : 'var(--amber)' }, text: U.sign(v, 0) }),
+        el('div', { class: 'bl-share mono' })
+      ]);
     }
 
+    var revPanel = X.panel('Einnahmen', [headRow()]
+      .concat(B.REVENUE.map(function (r) { return lineRow(r, 'rev'); }))
+      .concat([otherRow('rev')]), { bodyStyle: { padding: '4px 6px 10px' } });
+
+    var expPanel = X.panel('Ausgaben', [headRow()]
+      .concat(B.SPENDING.map(function (e) { return lineRow(e, 'exp'); }))
+      .concat([otherRow('exp')]), { bodyStyle: { padding: '4px 6px 10px' } });
+
+    /* Untereinander statt nebeneinander: Mit Anteil, BIP-Quote und der
+       Wirkung der Ressortentscheidungen braucht eine Haushaltszeile die
+       volle Breite, sonst wird die rechte Spalte abgeschnitten. */
+    host.appendChild(el('div', { class: 'col gap12' }, [revPanel, expPanel]));
+
+    /* Wirkung beschlossener Maßnahmen auf den Haushalt */
+    var fiscalPolicies = Object.keys(st.enacted).map(E.byId).filter(function (p) {
+      return p && p.fiscal && ((p.fiscal.rev || 0) !== 0 || (p.fiscal.exp || 0) !== 0);
+    });
     host.appendChild(el('div', { style: { marginTop: '14px' } }, [
-      X.panel('Entscheidungsbilanz · laufende Jahreswirkung', [
-        balanceCards(finance.recurring, 'LKR pro Jahr'),
-        financeTable(recurringRows, true),
-        el('div', { class: 'decision-once-head' }, [
-          el('div', {}, [
-            el('div', { class: 'hud-title', text: 'Einmalige Wirkungen bisher' }),
-            el('div', { class: 'xsmall faint', text: 'Kosten, Zuschüsse, Hilfen und Erlöse aus Maßnahmen und Ereignisentscheidungen.' })
-          ])
-        ]),
-        balanceCards(finance.oneoff, 'LKR einmalig'),
-        financeTable(oneoffRows, false),
+      X.panel('Haushaltswirkung beschlossener Maßnahmen', [
+        fiscalPolicies.length ? el('table', { class: 'dtable' }, [
+          el('thead', {}, el('tr', {}, [
+            el('th', { text: 'Maßnahme' }), el('th', { text: 'Bereich' }), el('th', { text: 'Haushaltsposten' }),
+            el('th', { class: 'num', text: 'Einnahmen' }), el('th', { class: 'num', text: 'Ausgaben' }),
+            el('th', { class: 'num', text: 'Saldo' })
+          ])),
+          el('tbody', {}, fiscalPolicies.map(function (p) {
+            var r = (p.fiscal.rev || 0) * sc, x = (p.fiscal.exp || 0) * sc, s = r - x;
+            var lineLabels = [];
+            if (p.fiscal.rev && p.fline) {
+              var rl = B.REVENUE.filter(function (x) { return x.k === p.fline; })[0];
+              if (rl) lineLabels.push(rl.label);
+            }
+            if (p.fiscal.exp) {
+              var xk = (p.fline && st.budget.exp[p.fline] !== undefined) ? p.fline : E.expLineFor(p.cat);
+              var xl = B.SPENDING.filter(function (x) { return x.k === xk; })[0];
+              if (xl && lineLabels.indexOf(xl.label) < 0) lineLabels.push(xl.label);
+            }
+            return el('tr', {}, [
+              el('td', { text: p.title }),
+              el('td', {}, [X.badge((M.DOMAIN_BY_KEY[p.cat] || {}).label || p.cat, '')]),
+              el('td', { class: 'xsmall', style: { color: 'var(--violet)' },
+                text: lineLabels.length ? lineLabels.join(' · ') : 'ohne festen Posten' }),
+              el('td', { class: 'num', style: { color: r > 0 ? 'var(--green)' : (r < 0 ? 'var(--red)' : '') }, text: r ? U.sign(r, 0) : '–' }),
+              el('td', { class: 'num', style: { color: x > 0 ? 'var(--amber)' : (x < 0 ? 'var(--cy)' : '') }, text: x ? U.sign(x, 0) : '–' }),
+              el('td', { class: 'num', style: { color: s >= 0 ? 'var(--green)' : 'var(--red)' }, text: U.sign(s, 0) })
+            ]);
+          }))
+        ]) : el('div', { class: 'faint small', text: 'Bislang wirkt keine beschlossene Maßnahme auf den Haushalt.' }),
         el('div', { style: { marginTop: '10px' } }, [
           el('button', { class: 'tiny', text: 'Haushaltsmaßnahmen durchsehen', onclick: function () { SL.app.go('p_budget'); } })
         ])
@@ -477,29 +501,208 @@
   };
 
   /* =========================================================
-     INDIKATOREN
+     SOFORTMASSNAHMEN
+
+     Alles, was in den vergangenen Quartalen schiefgelaufen ist,
+     steht hier als offener Missstand, zusammen mit den Mitteln,
+     die dagegen helfen. Solange nichts geschieht, richtet jeder
+     offene Punkt weiter Schaden an.
      ========================================================= */
-  V.indicators = function (st, host) {
+  V.setbacks = function (st, host) {
+    var open = E.openSetbacks(st);
+
     host.appendChild(el('div', { class: 'view-head' }, [
       el('div', {}, [
-        el('h2', { text: 'Indikatoren' }),
-        el('div', { class: 'sub', text: 'Vollständige Übersicht aller Kennzahlen, gruppiert nach Bereichen. Der Pfeil zeigt die Veränderung gegenüber dem Vorquartal.' })
+        el('h2', { text: 'Sofortmaßnahmen' }),
+        el('div', { class: 'sub', text: 'Was in den vergangenen Quartalen schiefgelaufen ist, steht hier so lange, bis Sie etwas dagegen tun. Jeder offene Punkt richtet weiter Schaden an. Sofortmaßnahmen wirken ohne Umsetzungsfrist, kosten politisches Kapital und haben Folgen, die Sie mit einplanen sollten.' })
+      ]),
+      el('div', { class: 'head-actions' }, [
+        el('div', { class: 'col', style: { textAlign: 'right' } }, [
+          el('div', { class: 'hud-label', text: 'Politisches Kapital' }),
+          el('div', { class: 'mono', style: { fontSize: '17px', color: 'var(--cy-bright)' }, text: U.n0(st.pc) })
+        ])
       ])
     ]));
 
-    var grid = el('div', { class: 'grid g2' });
+    if (!open.length) {
+      host.appendChild(X.panel('Lage', [
+        X.note('Zurzeit ist kein Missstand offen. Wenn ein Quartal schlecht ausgeht, erscheinen die Gegenmaßnahmen hier.', 'good'),
+        st.setbackSeen && Object.keys(st.setbackSeen).length
+          ? el('div', { style: { marginTop: '12px' } }, [
+              el('div', { class: 'hud-label', style: { marginBottom: '6px' }, text: 'Im Lauf der Amtszeit bereits bewältigt' }),
+              el('div', { class: 'row gap6 wrap' }, Object.keys(st.setbackSeen).map(function (k) {
+                var m = SL.data.setbacks.BY_KEY[k];
+                return m ? X.badge(m.label + ' ×' + st.setbackSeen[k], '') : null;
+              }))
+            ])
+          : null
+      ]));
+      return;
+    }
+
+    /* Überblick über den laufenden Schaden */
+    var sev3 = open.filter(function (o) { return o.meta.sev >= 3; }).length;
+    host.appendChild(el('div', { class: 'budget-summary', style: { marginBottom: '14px' } }, [
+      X.tile({ label: 'Offene Missstände', value: open.length,
+        tone: sev3 ? 'r' : 'a',
+        foot: [el('span', { class: 'mono xsmall muted', text: sev3 ? sev3 + ' davon dringend' : 'keiner dringend' }) ] }),
+      X.tile({ label: 'Ältester Punkt', value: (function () {
+          var oldest = open.reduce(function (a, b) { return a.rec.since < b.rec.since ? a : b; });
+          return (st.turn - oldest.rec.since) + ' Q';
+        })(), unit: 'offen',
+        tone: (st.turn - open.reduce(function (a, b) { return a.rec.since < b.rec.since ? a : b; }).rec.since) > 3 ? 'r' : 'a',
+        foot: [el('span', { class: 'mono xsmall muted', text: 'je länger offen, desto teurer' })] }),
+      X.tile({ label: 'Laufender Schaden', value: (function () {
+          var n = 0; open.forEach(function (o) { n += Object.keys(o.meta.drift || {}).length; });
+          return n;
+        })(), unit: 'Indikatoren',
+        tone: 'a',
+        foot: [el('span', { class: 'mono xsmall muted', text: 'verschlechtern sich jedes Quartal' })] })
+    ]));
+
+    open.forEach(function (o) {
+      var s = o.meta, age = st.turn - o.rec.since;
+
+      var driftChips = Object.keys(s.drift || {}).map(function (k) {
+        var meta = M.IND_BY_KEY[k];
+        var v = s.drift[k];
+        var bad = meta ? (meta.inv ? v > 0 : v < 0) : v < 0;
+        return X.badge((meta ? meta.label : k) + ' ' + U.sign(v, 2) + '/Q', bad ? 'red' : 'green');
+      });
+
+      var fixes = s.fix.map(function (f, idx) {
+        var chk = E.canRemedy(st, s.k, idx);
+        var used = E.remedyUsed(st, s.k, idx);
+        var costs = [];
+        costs.push(X.badge(f.pc + ' PK', st.pc >= f.pc ? 'cy' : 'red'));
+        if (f.fiscal && f.fiscal.exp) costs.push(X.badge('einmalig ' + U.n0(f.fiscal.exp) + ' Mrd.', 'amber'));
+        if (f.fiscal && f.fiscal.rev) costs.push(X.badge('bringt ' + U.n0(f.fiscal.rev) + ' Mrd.', 'green'));
+        if (f.budget) {
+          if (f.budget.revScale) costs.push(X.badge('Einnahmen dauerhaft ' + U.sign((f.budget.revScale - 1) * 100, 0) + ' %', f.budget.revScale > 1 ? 'amber' : 'green'));
+          if (f.budget.expScale) costs.push(X.badge('Ausgaben dauerhaft ' + U.sign((f.budget.expScale - 1) * 100, 0) + ' %', f.budget.expScale < 1 ? 'amber' : 'green'));
+          if (f.budget.lines) {
+            Object.keys(f.budget.lines).forEach(function (lk) {
+              var line = B.REVENUE.concat(B.SPENDING).filter(function (x) { return x.k === lk; })[0];
+              if (line) costs.push(X.badge(line.label + ' ' + U.sign((f.budget.lines[lk] - 1) * 100, 0) + ' %', 'violet'));
+            });
+          }
+        }
+        if (f.chance !== undefined) costs.push(X.badge('Erfolgsaussicht ' + U.n0(f.chance * 100) + ' %', f.chance > 0.7 ? 'amber' : 'red'));
+        if (f.once) costs.push(X.badge(used ? 'verbraucht' : 'nur einmal', used ? 'red' : ''));
+
+        return el('div', { class: 'ev-opt' + (chk.ok ? '' : ' disabled'),
+          style: chk.ok ? null : { opacity: '.5', cursor: 'not-allowed' },
+          onclick: chk.ok ? function () {
+            var r = E.applyRemedy(st, s.k, idx);
+            SL.state.save(st);
+            if (r.ok && r.failed) X.toast('bad', 'Gescheitert', r.note);
+            else if (r.ok) X.toast('good', 'Sofortmaßnahme ergriffen', f.t);
+            SL.app.render();
+          } : null }, [
+          el('div', { class: 'eo-t', text: f.t }),
+          el('div', { class: 'eo-d', text: f.d }),
+          el('div', { class: 'row gap6 wrap', style: { marginTop: '7px' } },
+            [X.effectChips(f.eff, 4)].concat(costs).concat(f.grp ? [X.groupChips(f.grp, 3)] : [])),
+          chk.ok ? null : el('div', { class: 'xsmall', style: { color: 'var(--red)', marginTop: '6px' }, text: chk.why })
+        ]);
+      });
+
+      host.appendChild(el('div', { style: { marginBottom: '14px' } }, [
+        X.panel(s.label, [
+          el('div', { class: 'row gap6 wrap', style: { marginBottom: '8px' } }, [
+            X.badge(s.cat, 'cy'),
+            X.badge(s.sev >= 3 ? 'dringend' : 'ernst', s.sev >= 3 ? 'red' : 'amber'),
+            X.badge(age === 0 ? 'neu in diesem Quartal' : 'seit ' + age + ' Quartal' + (age > 1 ? 'en' : '') + ' offen',
+              age > 3 ? 'red' : '')
+          ]),
+          el('div', { style: { fontSize: '13px', lineHeight: '1.7', marginBottom: '10px' }, text: s.desc }),
+          driftChips.length ? el('div', { style: { marginBottom: '10px' } }, [
+            el('div', { class: 'hud-label', style: { marginBottom: '5px' }, text: 'Schaden je Quartal, solange nichts geschieht' }),
+            el('div', { class: 'row gap6 wrap' }, driftChips)
+          ]) : null,
+          el('div', { class: 'hud-label', style: { marginBottom: '6px' }, text: 'Was Sie dagegen tun können' }),
+          el('div', { class: 'ev-opts' }, fixes)
+        ], { class: s.sev >= 3 ? 'crit-frame' : null })
+      ]));
+    });
+  };
+
+  /* =========================================================
+     INDIKATOREN
+     ========================================================= */
+  V.indicators = function (st, host) {
+    var BM = SL.data.benchmarks;
+    /* Der Vergleich bleibt über Ansichtswechsel hinweg an- oder
+       ausgeschaltet, damit man nicht bei jedem Aufruf neu klickt. */
+    if (V._bmOn === undefined) V._bmOn = true;
+
+    var head = el('div', { class: 'view-head' }, [
+      el('div', {}, [
+        el('h2', { text: 'Indikatoren' }),
+        el('div', { class: 'sub', text: 'Vollständige Übersicht aller Kennzahlen, gruppiert nach Bereichen. Der Pfeil zeigt die Veränderung gegenüber dem Vorquartal. Darunter steht, wo Sri Lanka im Vergleich zu sechs anderen Ländern liegt.' })
+      ]),
+      el('div', { class: 'head-actions' }, [
+        el('button', {
+          class: V._bmOn ? 'tiny' : 'tiny ghost',
+          text: V._bmOn ? 'Ländervergleich ausblenden' : 'Ländervergleich einblenden',
+          onclick: function () { V._bmOn = !V._bmOn; SL.app.render(); }
+        })
+      ])
+    ]);
+    host.appendChild(head);
+
+    if (V._bmOn) {
+      /* Legende: wer verglichen wird und warum gerade diese sechs */
+      host.appendChild(el('div', { style: { marginBottom: '14px' } }, [
+        X.panel('Verglichen wird mit', [
+          el('div', { class: 'bm-countries' }, BM.COUNTRIES.map(function (c) {
+            return el('div', { class: 'bm-country', title: c.desc }, [
+              el('span', { class: 'bm-dot', style: { background: c.color } }),
+              el('span', { class: 'bm-cname', text: c.name }),
+              el('span', { class: 'bm-cgdp', title: 'Bruttoinlandsprodukt je Kopf, gerundet', text: U.n0(c.gdpPc / 1000) + 'k $' }),
+              el('span', { class: 'bm-cdesc', text: c.desc })
+            ]);
+          }).concat([
+            el('div', { class: 'bm-country self' }, [
+              el('span', { class: 'bm-dot', style: { background: 'var(--cy-bright)' } }),
+              el('span', { class: 'bm-cname', text: 'Sri Lanka' }),
+              el('span', { class: 'bm-cgdp', title: 'Bruttoinlandsprodukt je Kopf, gerundet', text: '4,5k $' }),
+              el('span', { class: 'bm-cdesc', text: 'Ihr laufender Stand, ' + U.qLabel(st.year, st.q) + '. Der Balken bewegt sich mit jedem Quartal.' })
+            ])
+          ])),
+          X.note('Die Vergleichswerte sind gerundete Größenordnungen für 2025/26 aus öffentlich berichteten Quellen und bilden Verhältnisse ab, keine amtliche Statistik. Ein Stern hinter einem Wert bedeutet, dass die nackte Zahl in die Irre führt: Fahren Sie mit der Maus darüber. Fünfzehn der sechzig Indikatoren messen etwas, das es nur in Sri Lanka gibt, etwa das Vertrauen der Malaiyaha-Tamilen oder das Verhältnis zu Indien. Für die wird kein Vergleichswert erfunden.', '')
+        ])
+      ]));
+    }
+
+    var grid = el('div', { class: V._bmOn ? 'col gap12' : 'grid g2' });
     M.IND_GROUPS.forEach(function (g) {
       var list = M.INDICATORS.filter(function (m) { return m.g === g.k; });
       grid.appendChild(X.panel(g.icon + '  ' + g.label, [
-        el('div', {}, list.map(function (meta) {
+        el('div', { class: V._bmOn ? 'bm-list' : '' }, list.map(function (meta) {
           var v = st.ind[meta.k];
           var base = B.INDICATORS[meta.k];
-          var d = v - base;
-          return X.meter({
+          var rank = V._bmOn ? BM.rank(st, meta.k) : null;
+
+          var m = X.meter({
             label: meta.label, value: v, min: meta.min, max: meta.max, inv: meta.inv,
             text: X.fmtInd(meta, v) + ' ' + (meta.unit && meta.fmt !== 'pct' ? meta.unit.replace('Index', '') : ''),
-            delta: d, hint: meta.desc + '  |  Ausgangswert 2026: ' + X.fmtInd(meta, base)
+            delta: v - base, hint: meta.desc + '  |  Ausgangswert 2026: ' + X.fmtInd(meta, base)
           });
+          if (!V._bmOn) return m;
+
+          return el('div', { class: 'bm-row' }, [
+            el('div', { class: 'bm-row-top' }, [
+              el('div', { class: 'grow' }, [m]),
+              rank ? el('span', {
+                class: 'bm-rank ' + (rank.pos <= 2 ? 'g' : (rank.pos <= 4 ? 'a' : 'r')),
+                title: 'Rang ' + rank.pos + ' von ' + rank.of + ' im Vergleich: ' +
+                       rank.order.map(function (o) { return o.k; }).join(' › '),
+                text: rank.pos + '. von ' + rank.of
+              }) : null
+            ]),
+            X.benchmarkBar(st, meta)
+          ]);
         }))
       ]));
     });
@@ -524,6 +727,120 @@
         ]);
       })),
       st.log.length ? null : el('div', { class: 'faint small', text: 'Noch keine Einträge.' })
+    ]));
+  };
+
+  /* =========================================================
+     KABINETT UND BEHÖRDEN
+     ========================================================= */
+  V.cabinet = function (st, host) {
+    var Gov = SL.data.governance;
+
+    host.appendChild(el('div', { class: 'view-head' }, [
+      el('div', {}, [
+        el('h2', { text: 'Kabinett und Behörden' }),
+        el('div', { class: 'sub', text: 'Sie regieren nicht selbst, sondern durch Ministerien und nachgeordnete Behörden. Jedes Quartal arbeitet eines davon sichtbar ab — gut oder schlecht. Ein schwaches Haus kostet dauerhaft Wirkung, und dagegen hilft nur eine Entlassung. Die Namen sind erfunden.' })
+      ]),
+      el('div', { class: 'head-actions' }, [
+        el('div', { class: 'col', style: { textAlign: 'right' } }, [
+          el('div', { class: 'hud-label', text: 'Politisches Kapital' }),
+          el('div', { class: 'mono', style: { fontSize: '17px', color: 'var(--cy-bright)' }, text: U.n0(st.pc) })
+        ])
+      ])
+    ]));
+
+    var ministers = Gov.MINISTRIES.map(function (m) { return { def: m, c: st.cabinet[m.k] }; })
+      .filter(function (x) { return x.c; });
+    var weak = ministers.filter(function (x) { return x.c.performance < 38; }).length;
+    var scandals = ministers.filter(function (x) { return x.c.scandal; }).length;
+    var avg = ministers.length
+      ? ministers.reduce(function (a, x) { return a + x.c.performance; }, 0) / ministers.length : 0;
+
+    host.appendChild(el('div', { class: 'budget-summary', style: { marginBottom: '14px' } }, [
+      X.tile({ label: 'Durchschnittliche Leistung', value: U.n0(avg), unit: 'von 100',
+        tone: avg < 45 ? 'r' : (avg < 58 ? 'a' : 'g'),
+        foot: [el('span', { class: 'mono xsmall muted', text: 'wirkt auf jedes Quartalsergebnis' })] }),
+      X.tile({ label: 'Schwache Ressorts', value: weak, unit: 'von ' + ministers.length,
+        tone: weak ? 'r' : 'g',
+        foot: [el('span', { class: 'mono xsmall muted', text: weak ? 'unter 38 Punkten' : 'keines unter 38' })] }),
+      X.tile({ label: 'Offene Skandale', value: scandals,
+        tone: scandals ? 'r' : 'g',
+        foot: [el('span', { class: 'mono xsmall muted', text: scandals ? 'Entlassung möglich' : 'derzeit keiner' })] })
+    ]));
+
+    /* --- Kabinett --- */
+    host.appendChild(X.panel('Kabinett', ministers.map(function (x) {
+      var c = x.c, def = x.def;
+      var chk = E.canDismissMinister(st, def.k);
+      var tone = c.performance < 38 ? 'red' : (c.performance < 55 ? 'amber' : 'green');
+
+      return el('div', { class: 'ev-opt', style: { cursor: 'default' } }, [
+        el('div', { class: 'row', style: { justifyContent: 'space-between', alignItems: 'baseline' } }, [
+          el('div', { class: 'eo-t', text: c.name + ' — ' + def.office }),
+          el('div', { class: 'mono', style: { color: 'var(--' + (tone === 'red' ? 'red' : (tone === 'amber' ? 'amber' : 'green')) + ')' },
+            text: U.n0(c.performance) })
+        ]),
+        el('div', { class: 'eo-d', text: def.ministry }),
+        el('div', { class: 'row gap6 wrap', style: { marginTop: '7px' } }, [
+          X.badge('Erfolge ' + c.successes, c.successes ? 'green' : ''),
+          X.badge('Fehlschläge ' + c.failures, c.failures >= 2 ? 'red' : ''),
+          c.generation ? X.badge(c.generation + '. Besetzung', 'violet') : null,
+          c.scandal ? X.badge('Skandal', 'red') : null
+        ]),
+        c.scandal ? el('div', { class: 'xsmall', style: { color: 'var(--red)', marginTop: '6px' }, text: c.scandal.text }) : null,
+        el('div', { style: { marginTop: '8px' } }, [
+          el('button', {
+            class: chk.ok ? 'danger' : 'disabled',
+            disabled: chk.ok ? null : 'disabled',
+            text: 'Entlassen (6 PK)',
+            onclick: chk.ok ? function () {
+              var r = E.dismissMinister(st, def.k);
+              SL.state.save(st);
+              if (r.ok) X.toast('good', 'Kabinett umgebildet', r.oldName + ' geht, ' + r.newName + ' übernimmt.');
+              else X.toast('bad', 'Nicht möglich', r.why);
+              SL.app.render();
+            } : null
+          }),
+          chk.ok ? null : el('div', { class: 'xsmall muted', style: { marginTop: '5px' }, text: chk.why })
+        ])
+      ]);
+    })));
+
+    /* --- Behörden --- */
+    host.appendChild(el('div', { style: { marginTop: '14px' } }, [
+      X.panel('Nachgeordnete Behörden', [
+        X.note('Behörden lassen sich nicht entlassen. Ihre Leistung hängt an der Verwaltungskraft des Staates — sie steigt mit Maßnahmen, die den Staatsapparat stärken.', ''),
+        el('div', { style: { marginTop: '10px' } }, Gov.INSTITUTIONS.map(function (def) {
+          var a = st.institutions[def.k];
+          if (!a) return null;
+          var tone = a.performance < 38 ? 'red' : (a.performance < 55 ? 'amber' : 'green');
+          return el('div', { class: 'row', style: { justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid var(--line)' } }, [
+            el('div', { style: { fontSize: '13px' }, text: def.name }),
+            el('div', { class: 'row gap6' }, [
+              X.badge('Erfolge ' + a.successes, a.successes ? 'green' : ''),
+              X.badge('Fehlschläge ' + a.failures, a.failures >= 2 ? 'red' : ''),
+              el('span', { class: 'mono', style: { color: 'var(--' + (tone === 'red' ? 'red' : (tone === 'amber' ? 'amber' : 'green')) + ')', minWidth: '28px', textAlign: 'right' },
+                text: U.n0(a.performance) })
+            ])
+          ]);
+        }))
+      ])
+    ]));
+
+    /* --- Was der Apparat zuletzt geliefert hat --- */
+    var histRows = (st.governanceHistory || []).slice(0, 12);
+    host.appendChild(el('div', { style: { marginTop: '14px' } }, [
+      X.panel('Zuletzt aus dem Regierungsapparat', histRows.length ? histRows.map(function (o) {
+        return el('div', { style: { padding: '8px 0', borderBottom: '1px solid var(--line)' } }, [
+          el('div', { class: 'row gap6', style: { marginBottom: '3px' } }, [
+            X.badge('Q' + (o.turn + 1), ''),
+            X.badge(o.kind === 'good' ? 'Erfolg' : 'Fehlschlag', o.kind === 'good' ? 'green' : 'red'),
+            o.scandal ? X.badge('Skandal', 'red') : null
+          ]),
+          el('div', { style: { fontSize: '13px' }, text: o.title }),
+          el('div', { class: 'xsmall muted', text: o.text })
+        ]);
+      }) : [el('div', { class: 'faint small', text: 'Noch nichts. Nach dem ersten Quartalswechsel steht hier, was die Ministerien geliefert haben.' })])
     ]));
   };
 

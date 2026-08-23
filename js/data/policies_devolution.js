@@ -73,7 +73,7 @@
       tags: ['Devolution', 'Finanzen']
     },
     {
-      id: 'dv_prov_tax', cat: 'devolution', sub: 'Finanzen',
+      id: 'dv_prov_tax', fline: 'nontax', cat: 'devolution', sub: 'Finanzen',
       title: 'Provinzen echte eigene Steuern zugestehen',
       desc: 'Grundsteuer, Fahrzeugsteuer, Gewerbeabgaben und ein Anteil an der Mehrwertsteuer werden zu Provinzeinnahmen. Ohne eigene Einnahmen bleibt jede Devolution eine Verwaltungsübung.',
       party: ['ITAK', 'SJB'], need: 'twothirds', pc: 30, lag: 6,

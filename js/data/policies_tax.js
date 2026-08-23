@@ -8,7 +8,7 @@
 
     /* ---------- Einzugsfähigkeit der Verwaltung ---------- */
     {
-      id: 'bu_ramis_rebuild', cat: 'budget', sub: 'Steuerverwaltung',
+      id: 'bu_ramis_rebuild', fline: 'nontax', cat: 'budget', sub: 'Steuerverwaltung',
       title: 'Steuerverwaltungssystem ersetzen',
       desc: 'Das Verwaltungssystem der Steuerbehörde läuft seit seiner Einführung nicht zuverlässig, Erklärungen gehen verloren, Bescheide werden verspätet erstellt, und ein erheblicher Teil der Arbeit läuft weiterhin auf Papier. Vollständiger Neuaufbau mit erprobter Standardsoftware, Datenmigration und Schulung.',
       party: ['NPP', 'SJB', 'NDF'], need: 'exec', pc: 11, lag: 5,
@@ -19,7 +19,7 @@
       tags: ['Steuern', 'Digitalisierung', 'Schlüsselmaßnahme']
     },
     {
-      id: 'bu_revenue_authority', cat: 'budget', sub: 'Steuerverwaltung',
+      id: 'bu_revenue_authority', fline: 'nontax', cat: 'budget', sub: 'Steuerverwaltung',
       title: 'Steuerbehörde als eigenständige Anstalt führen',
       desc: 'Zusammenführung von Inland Revenue, Zoll und Verbrauchsteuerbehörde unter einem Dach mit eigenem Personalrecht, leistungsbezogener Vergütung und einem Vorstand, der nicht bei jedem Regierungswechsel ausgetauscht wird. Das Modell hat in mehreren vergleichbaren Ländern die Einnahmenquote deutlich gehoben.',
       party: ['NPP', 'SJB', 'NDF'], need: 'simple', pc: 22, lag: 5,
@@ -30,7 +30,7 @@
       tags: ['Steuern', 'Verwaltung', 'Schlüsselmaßnahme']
     },
     {
-      id: 'bu_asset_register', cat: 'budget', sub: 'Steuerverwaltung',
+      id: 'bu_asset_register', fline: 'nontax', cat: 'budget', sub: 'Steuerverwaltung',
       title: 'Nationales Vermögensregister aufbauen',
       desc: 'Zusammenführung von Grundbuch, Fahrzeugregister, Handelsregister, Wertpapierdepots und gemeldetem Auslandsvermögen zu einem abgleichbaren Bestand, verknüpft mit der Steuernummer. Voraussetzung dafür, dass Vermögen-, Erbschaft- und Grundsteuern überhaupt durchsetzbar werden.',
       party: ['NPP', 'FSP', 'SJB'], need: 'simple', pc: 20, lag: 5,
@@ -41,7 +41,7 @@
       tags: ['Steuern', 'Vermögen', 'Schlüsselmaßnahme']
     },
     {
-      id: 'bu_audit_capacity', cat: 'budget', sub: 'Steuerverwaltung',
+      id: 'bu_audit_capacity', fline: 'nontax', cat: 'budget', sub: 'Steuerverwaltung',
       title: 'Betriebsprüfung für Großunternehmen aufbauen',
       desc: 'Eine eigene Einheit für die größten Steuerpflichtigen mit Branchenspezialisten, Datenanalyse und ausreichend Personal, um jeden Großbetrieb in einem festen Turnus zu prüfen. Wenige hundert Unternehmen tragen den Großteil des Aufkommens, und genau dort ist die Prüfdichte am geringsten.',
       party: ['NPP', 'SJB', 'FSP'], need: 'exec', pc: 9, lag: 4,
@@ -53,7 +53,7 @@
       tags: ['Steuern', 'Vollzug']
     },
     {
-      id: 'bu_transfer_pricing', cat: 'budget', sub: 'Steuerverwaltung',
+      id: 'bu_transfer_pricing', fline: 'corp', cat: 'budget', sub: 'Steuerverwaltung',
       title: 'Gewinnverlagerung ins Ausland unterbinden',
       desc: 'Verrechnungspreisdokumentation nach internationalem Standard, Zinsschranke, Quellensteuer auf konzerninterne Lizenz- und Beratungszahlungen. Der Tee-, Bekleidungs- und Telekommunikationssektor arbeitet weitgehend in Konzernstrukturen mit Auslandsbezug.',
       party: ['NPP', 'FSP', 'SJB'], need: 'simple', pc: 13, lag: 4,
@@ -65,7 +65,7 @@
       tags: ['Steuern', 'Konzerne']
     },
     {
-      id: 'bu_exchange_info', cat: 'budget', sub: 'Steuerverwaltung',
+      id: 'bu_exchange_info', fline: 'nontax', cat: 'budget', sub: 'Steuerverwaltung',
       title: 'Automatischen Informationsaustausch nutzen',
       desc: 'Vollständige Anbindung an den internationalen Austausch über Finanzkonten, Abgleich der eingehenden Daten mit den hiesigen Erklärungen und eine befristete Offenlegungsmöglichkeit gegen Nachzahlung. Auslandsvermögen srilankischer Steuerpflichtiger ist bisher praktisch unbesteuert.',
       party: ['NPP', 'SJB', 'FSP'], need: 'simple', pc: 12, lag: 4,
@@ -77,7 +77,7 @@
       tags: ['Steuern', 'Außenpolitik']
     },
     {
-      id: 'bu_informal_registry', cat: 'budget', sub: 'Steuerverwaltung',
+      id: 'bu_informal_registry', fline: 'nontax', cat: 'budget', sub: 'Steuerverwaltung',
       title: 'Kleingewerbe mit einfacher Pauschalabgabe erfassen',
       desc: 'Registrierung über das Mobiltelefon, eine gestaffelte Pauschalabgabe nach Umsatzklasse statt vollständiger Buchführung, und im Gegenzug Zugang zu Bankkredit, Sozialversicherung und öffentlichen Aufträgen. Der informelle Sektor umfasst einen erheblichen Teil aller Beschäftigten.',
       party: ['NPP', 'SJB'], need: 'simple', pc: 11, lag: 5,
@@ -91,7 +91,7 @@
 
     /* ---------- Progressive Besteuerung ---------- */
     {
-      id: 'bu_paye_progressive', cat: 'budget', sub: 'Progression',
+      id: 'bu_paye_progressive', fline: 'paye', cat: 'budget', sub: 'Progression',
       title: 'Lohn- und Einkommensteuer feiner staffeln',
       desc: 'Statt weniger breiter Stufen ein Tarif mit mehr Zwischenstufen: sanfter Einstieg für kleine und mittlere Einkommen, deutlich steilerer Anstieg im oberen Bereich. Der bisherige Tarif erreicht den Höchstsatz bei einem Einkommen, das in Colombo kein Spitzeneinkommen ist.',
       party: ['NPP', 'FSP', 'SJB'], need: 'simple', pc: 14, lag: 2,
@@ -103,7 +103,7 @@
       tags: ['Steuern', 'Umverteilung']
     },
     {
-      id: 'bu_top_rate', cat: 'budget', sub: 'Progression',
+      id: 'bu_top_rate', fline: 'paye', cat: 'budget', sub: 'Progression',
       title: 'Spitzensteuersatz auf 45 Prozent anheben',
       desc: 'Eine zusätzliche Tarifstufe für sehr hohe Einkommen, kombiniert mit einer Mindestbesteuerung, damit die Stufe nicht durch Gestaltung leerläuft. Zielgruppe sind einige zehntausend Steuerpflichtige, nicht die Mittelschicht.',
       party: ['NPP', 'FSP'], need: 'simple', pc: 16, lag: 2,
@@ -115,7 +115,7 @@
       tags: ['Steuern', 'Umverteilung']
     },
     {
-      id: 'bu_corporate_tiers', cat: 'budget', sub: 'Progression',
+      id: 'bu_corporate_tiers', fline: 'corp', cat: 'budget', sub: 'Progression',
       title: 'Körperschaftsteuer nach Unternehmensgröße staffeln',
       desc: 'Ermäßigter Satz für kleine und mittlere Unternehmen bis zu einer festen Umsatzgrenze, Regelsatz darüber, erhöhter Satz für marktbeherrschende Stellungen in Bankwesen, Telekommunikation und Handel. Entlastet die Betriebe, die Beschäftigung schaffen.',
       party: ['NPP', 'SJB'], need: 'simple', pc: 13, lag: 3,
@@ -127,7 +127,7 @@
       tags: ['Steuern', 'Mittelstand']
     },
     {
-      id: 'bu_bank_levy', cat: 'budget', sub: 'Progression',
+      id: 'bu_bank_levy', fline: 'corp', cat: 'budget', sub: 'Progression',
       title: 'Sonderabgabe auf Gewinne des Bankensektors',
       desc: 'Eine befristete Abgabe auf die Gewinne der Geschäftsbanken, die während der Umschuldung und der Hochzinsphase außergewöhnlich hohe Margen erzielt haben, während die Realwirtschaft keinen Kredit bekam.',
       party: ['NPP', 'FSP'], need: 'simple', pc: 15, lag: 1,
@@ -138,7 +138,7 @@
       tags: ['Steuern', 'Finanzsektor']
     },
     {
-      id: 'bu_windfall_tax', cat: 'budget', sub: 'Progression',
+      id: 'bu_windfall_tax', fline: 'corp', cat: 'budget', sub: 'Progression',
       title: 'Übergewinnabgabe bei außergewöhnlichen Margen',
       desc: 'Eine gesetzlich definierte Abgabe, die greift, wenn ein Unternehmen in einem regulierten oder konzentrierten Markt eine Rendite weit oberhalb des Branchendurchschnitts erzielt. Anwendungsfälle waren zuletzt Telekommunikation, Zement und Speiseölimport.',
       party: ['NPP', 'FSP'], need: 'simple', pc: 14, lag: 2,
@@ -150,7 +150,7 @@
       tags: ['Steuern', 'Regulierung']
     },
     {
-      id: 'bu_gift_tax', cat: 'budget', sub: 'Progression',
+      id: 'bu_gift_tax', fline: 'nontax', cat: 'budget', sub: 'Progression',
       title: 'Schenkungsteuer als Ergänzung zur Erbschaftsteuer',
       desc: 'Ohne Schenkungsteuer ist jede Erbschaftsteuer in wenigen Jahren umgangen, weil Vermögen vorher übertragen wird. Gleiche Sätze, gleiche Freibeträge, Zusammenrechnung über zehn Jahre.',
       party: ['NPP', 'FSP'], need: 'simple', pc: 12, lag: 3,
@@ -163,7 +163,7 @@
       tags: ['Steuern', 'Vermögen']
     },
     {
-      id: 'bu_land_value_tax', cat: 'budget', sub: 'Progression',
+      id: 'bu_land_value_tax', fline: 'nontax', cat: 'budget', sub: 'Progression',
       title: 'Bodenwertabgabe auf ungenutzte Grundstücke',
       desc: 'Eine Abgabe auf den Bodenwert unbebauter und ungenutzter Grundstücke in Städten und in erschlossenen Lagen. Trifft Spekulationsbestände, nicht bewirtschaftetes Land, und setzt Flächen frei, die für Wohnungsbau vorgesehen waren.',
       party: ['NPP', 'FSP', 'SJB'], need: 'simple', pc: 15, lag: 4,
@@ -177,7 +177,7 @@
 
     /* ---------- Entlastung der Arbeitnehmerschaft ---------- */
     {
-      id: 'bu_paye_threshold', cat: 'budget', sub: 'Entlastung',
+      id: 'bu_paye_threshold', fline: 'paye', cat: 'budget', sub: 'Entlastung',
       title: 'Steuerfreibetrag deutlich anheben',
       desc: 'Anhebung des steuerfreien Jahreseinkommens, sodass Beschäftigte im unteren Lohnbereich vollständig aus der Einkommensteuer herausfallen. Nach der Krise sind viele Haushalte real ärmer als 2019 und zahlen trotzdem erstmals Lohnsteuer.',
       party: ['NPP', 'SJB', 'FSP'], need: 'simple', pc: 10, lag: 1,
@@ -200,7 +200,7 @@
       tags: ['Steuern', 'Soziales']
     },
     {
-      id: 'bu_withholding_small', cat: 'budget', sub: 'Entlastung',
+      id: 'bu_withholding_small', fline: 'nontax', cat: 'budget', sub: 'Entlastung',
       title: 'Quellensteuer auf kleine Spareinlagen abschaffen',
       desc: 'Zinserträge unterhalb einer Freigrenze bleiben steuerfrei. Die pauschale Quellensteuer trifft Rentnerinnen und Kleinsparer, deren Zinsen die Inflation ohnehin nicht ausgleichen, und bringt gemessen daran wenig.',
       party: ['NPP', 'SJB', 'SLPP'], need: 'simple', pc: 6, lag: 1,
@@ -211,7 +211,7 @@
       tags: ['Steuern', 'Entlastung']
     },
     {
-      id: 'bu_vat_rate_cut', cat: 'budget', sub: 'Entlastung',
+      id: 'bu_vat_rate_cut', fline: 'vat', cat: 'budget', sub: 'Entlastung',
       title: 'Mehrwertsteuersatz von 18 auf 15 Prozent senken',
       desc: 'Die Mehrwertsteuer belastet untere Einkommen anteilig am stärksten, weil sie ihr gesamtes Einkommen verbrauchen. Eine Senkung des Regelsatzes wirkt sofort auf die Lebenshaltungskosten, reißt aber ein sehr großes Loch in den Haushalt.',
       party: ['SJB', 'SLPP', 'FSP'], need: 'simple', pc: 18, lag: 1,

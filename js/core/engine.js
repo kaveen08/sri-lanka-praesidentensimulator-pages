@@ -79,6 +79,59 @@
     };
   };
 
+  /* ---------------------------------------------------------
+     Zuordnung beschlossener Maßnahmen zu Haushaltsposten
+
+     Eine Entscheidung im Bildungsressort schlägt im Bildungsetat
+     auf, eine im Verteidigungsressort im Verteidigungsetat. Damit
+     ist im Haushaltsplan sichtbar, was die Ressortpolitik mit den
+     einzelnen Posten macht, statt nur mit der Gesamtsumme.
+
+     `fline` an einer Maßnahme überschreibt die Zuordnung; ohne
+     Angabe entscheidet das Ressort. Was sich nicht zuordnen lässt,
+     wird als Sammelposten ausgewiesen statt stillschweigend
+     untergebracht.
+     --------------------------------------------------------- */
+  var CAT_EXP_LINE = {
+    education: 'education', health: 'health', military: 'defence',
+    social: 'social', devolution: 'provinces', transport: 'capital',
+    climate: 'capital', economy: 'capital', agri: 'subsidies',
+    energy: 'subsidies', justice: 'police', state: 'ministries',
+    identity: 'ministries', digital: 'ministries', foreign: 'ministries',
+    budget: 'ministries'
+  };
+
+  /* Auf welchen Ausgabenposten wirkt ein Ressort? */
+  E.expLineFor = function (cat) { return CAT_EXP_LINE[cat] || null; };
+
+  E.policyLineDeltas = function (st) {
+    var sc = E.scale(st);
+    var out = { rev: {}, exp: {}, revOther: 0, expOther: 0, count: { rev: {}, exp: {} }, otherCount: 0 };
+    for (var id in st.enacted) {
+      var p = E.byId(id);
+      if (!p || !p.fiscal) continue;
+
+      var r = p.fiscal.rev || 0;
+      if (r) {
+        /* Mehreinnahmen nur, soweit einziehbar; Verzicht in voller Höhe. */
+        var eff = (r > 0 ? r * E.riskFactor(st, p) : r) * sc;
+        var rk = p.fline && st.budget.rev[p.fline] !== undefined ? p.fline : null;
+        if (rk) { out.rev[rk] = (out.rev[rk] || 0) + eff; out.count.rev[rk] = (out.count.rev[rk] || 0) + 1; }
+        else { out.revOther += eff; out.otherCount++; }
+      }
+
+      var x = p.fiscal.exp || 0;
+      if (x) {
+        var xk = (p.fline && st.budget.exp[p.fline] !== undefined) ? p.fline : CAT_EXP_LINE[p.cat];
+        if (xk && st.budget.exp[xk] !== undefined) {
+          out.exp[xk] = (out.exp[xk] || 0) + x * sc;
+          out.count.exp[xk] = (out.count.exp[xk] || 0) + 1;
+        } else { out.expOther += x * sc; out.otherCount++; }
+      }
+    }
+    return out;
+  };
+
   E.interest = function (st) {
     var rate = st.effRate * (1 + (72 - st.ind.imfCompl) / 260);
     rate = U.clamp(rate, 0.05, 0.17);
@@ -342,8 +395,16 @@
     return Math.round((p.pc || 0) * f);
   };
 
-  /* Anteil der Wirkung, der bei offenen Hindernissen tatsächlich ankommt */
-  E.riskFactor = function (st, p) { return SL.data.risks.factor(st, p); };
+  /* Anteil der Wirkung, der bei offenen Hindernissen tatsächlich ankommt.
+     Ein Umsetzungsstab im Präsidialamt und eine Vorrangentscheidung für
+     die Voraussetzungen holen einen Teil der verlorenen Wirkung zurück. */
+  E.riskFactor = function (st, p) {
+    var f = SL.data.risks.factor(st, p);
+    if (f >= 1) return f;
+    if (st.flags.deliveryUnit) f += (1 - f) * 0.22;
+    if (st.flags.riskPriority) f += (1 - f) * 0.18;
+    return Math.min(1, f);
+  };
 
   /* Zustimmung zu einer Volksabstimmung schätzen */
   E.referendumSupport = function (st, p) {
@@ -388,18 +449,6 @@
     /* Sofortige Sonderwirkungen */
     E.special(st, p);
 
-    E.recordDecisionFinance(st, {
-      sourceId: p.id, sourceType: 'policy', title: p.title,
-      recurringRev: p.fiscal && p.fiscal.rev, recurringExp: p.fiscal && p.fiscal.exp,
-      oneoffExp: p.oneoff || 0, active: true
-    });
-
-    E.queueConsequence(st, {
-      kind: 'policy', sourceId: p.id, sourceTitle: p.title,
-      decision: 'Maßnahme beschlossen', category: p.cat || '',
-      dueTurn: st.turn + Math.max(1, Math.min(3, lag))
-    });
-
     St.log(st, 'info', 'Beschlossen: ' + p.title + ' (' + (M.NEEDS[p.need] || M.NEEDS.simple).label + ', ' + cost + ' PK).');
     return { ok: true, cost: cost };
   };
@@ -412,13 +461,9 @@
     if (p) {
       E.applyMods(st, p.eff, -done);
       E.applyGroups(st, p.grp, -done * 0.6);
-      E.reverseSpecial(st, p);
     }
     delete st.enacted[id];
     st.repealed[id] = st.turn;
-    (st.decisionFinance || []).forEach(function (entry) {
-      if (entry.sourceType === 'policy' && entry.sourceId === id && entry.active) entry.active = false;
-    });
     st.pc -= Math.round((p ? p.pc : 10) * 0.4);
     St.log(st, 'warn', 'Zurückgenommen: ' + (p ? p.title : id) + '.');
     return true;
@@ -447,29 +492,6 @@
         break;
       case 'devolution_referendum':
         st.flags.devolutionReferendum = true;
-        break;
-      case 'term_limit_removed':
-        st.flags.termLimitRemoved = true;
-        st.termLimit = null;
-        St.log(st, 'warn', 'Die Begrenzung auf zwei Amtszeiten ist aufgehoben. Künftige Wiederkandidaturen sind unbegrenzt möglich.');
-        break;
-      case 'term_limit_two':
-        st.flags.termLimitRemoved = false;
-        st.termLimit = 2;
-        break;
-    }
-  };
-
-  E.reverseSpecial = function (st, p) {
-    switch (p.special) {
-      case 'term_limit_removed':
-        st.flags.termLimitRemoved = false;
-        st.termLimit = 2;
-        St.log(st, 'warn', 'Die Begrenzung auf zwei Amtszeiten gilt wieder.');
-        break;
-      case 'term_limit_two':
-        /* Die Verfassungsgrundlage bleibt ohne Gegenreform bei zwei Perioden. */
-        st.termLimit = st.flags.termLimitRemoved ? null : 2;
         break;
     }
   };
@@ -547,7 +569,11 @@
      --------------------------------------------------------- */
   E.nextTurn = function (st) {
     if (st.gameOver) return { gameOver: st.gameOver };
-    var res = { messages: [], outcomes: [], event: null };
+    var res = { messages: [], event: null };
+    /* Sammelt, was in diesem Quartal schiefgegangen ist. Daraus
+       entstehen die offenen Missstände am Ende des Zuges. */
+    var ctx = {};
+    st._sbImfPassed = st.imf.reviewsPassed;
 
     /* 1. Umsetzungsfortschritt beschlossener Maßnahmen */
     for (var id in st.enacted) {
@@ -591,8 +617,10 @@
       }
     });
 
-    /* 2. Natürliche Entwicklung ohne Zutun */
+    /* 2. Natürliche Entwicklung ohne Zutun, dazu der laufende Schaden
+          aus allem, was ungelöst offen liegt */
     E.naturalDrift(st);
+    E.setbackDrift(st);
 
     /* 3. Bestandsindikatoren */
     E.recomputeIndex(st);
@@ -697,28 +725,30 @@
     st.pc = U.clamp(st.pc + Math.max(2, gain), 0, 220);
 
     /* 12. Fraktionsdisziplin */
-    E.checkDefections(st, res);
+    E.checkDefections(st, res, ctx);
+
+    /* 12b. Regierungsapparat: ein Ressort oder eine Behörde liefert
+            in diesem Quartal ab -- oder eben nicht. */
+    E.processGovernance(st, res);
 
     /* 13. Zeit weiterschalten */
     var n = U.nextQ(st.year, st.q);
     st.year = n.year; st.q = n.q; st.turn++;
 
     /* 14. IWF-Überprüfung */
-    E.imfReview(st, bud, res);
-
-    /* 14b. Sichtbare Folgen, Ressortleistung und Sitzbewegungen */
-    E.processConsequences(st, res);
-    E.processGovernance(st, res);
-    E.processParliament(st, res);
-    E.recomputeIndex(st);
+    E.imfReview(st, bud, res, ctx);
 
     /* 15. Krisen und Spielende */
     E.checkCrisis(st, res);
 
+    /* 15b. Was in diesem Quartal schiefgelaufen ist, wird als offener
+            Missstand vermerkt. Zu jedem gibt es Gegenmaßnahmen. */
+    if (!st.gameOver) E.scanSetbacks(st, res, ctx);
+
     St.snapshot(st);
 
     /* 16. Ereignis auswählen */
-    if (!st.gameOver && !res.election) st.pendingEvent = E.pickEvent(st);
+    if (!st.gameOver) st.pendingEvent = E.pickEvent(st);
     res.event = st.pendingEvent;
     return res;
   };
@@ -756,16 +786,19 @@
   /* ---------------------------------------------------------
      Fraktionsdisziplin
      --------------------------------------------------------- */
-  E.checkDefections = function (st, res) {
+  E.checkDefections = function (st, res, ctx) {
     if (st.flags.antiDefection) return;
     var risk = 0;
     if (st.approvalOverall < 42) risk += (42 - st.approvalOverall) * 0.9;
     if (st.ind.sinhalaPress > 62) risk += (st.ind.sinhalaPress - 62) * 0.8;
     if (st.streetPressure > 65) risk += (st.streetPressure - 65) * 0.5;
+    /* Durchgesetzte Fraktionsdisziplin hält die Hinterbänke zusammen */
+    if (st.flags.partyDiscipline) risk *= 0.45;
     if (risk <= 0) return;
     if (E.rand(st) * 100 < risk) {
       var lost = 1 + Math.floor(E.rand(st) * 5);
-      lost = -E.shiftSeats(st, -lost, 'Übertritte wegen mangelnder Fraktionsdisziplin');
+      st.seatsGov = Math.max(0, st.seatsGov - lost);
+      if (ctx) ctx.defected = true;
       St.log(st, 'bad', lost + ' Abgeordnete verlassen die Regierungsfraktion. Mehrheit jetzt ' + st.seatsGov + ' von 225.');
       res.messages.push({ kind: 'bad', title: 'Fraktion', text: lost + ' Abgeordnete sind übergelaufen.' });
     }
@@ -774,7 +807,7 @@
   /* ---------------------------------------------------------
      IWF-Überprüfung
      --------------------------------------------------------- */
-  E.imfReview = function (st, bud, res) {
+  E.imfReview = function (st, bud, res, ctx) {
     if (!st.imf.programActive) {
       /* Ohne Programm bricht auch die übrige Geberfinanzierung weg */
       st.drift.imfCompl = (st.drift.imfCompl || 0) - 1.0;
@@ -796,6 +829,7 @@
       res.messages.push({ kind: 'good', title: 'IWF', text: 'Überprüfung bestanden, Tranche freigegeben.' });
     } else {
       st.imf.reviewsFailed++;
+      if (ctx) ctx.imfFailed = true;
       st.mods.imfCompl = (st.mods.imfCompl || 0) - 12;
       st.mods.fdi = (st.mods.fdi || 0) - 0.12;
       var why = [];
@@ -806,6 +840,7 @@
       res.messages.push({ kind: 'bad', title: 'IWF', text: 'Überprüfung gescheitert: ' + why.join(', ') + '.' });
       if (st.imf.reviewsFailed >= 3 && st.imf.programActive) {
         st.imf.programActive = false;
+        if (ctx) ctx.imfSuspended = true;
         st.mods.imfCompl = (st.mods.imfCompl || 0) - 25;
         st.mods.fdi = (st.mods.fdi || 0) - 0.5;
         st.mods.privateSector = (st.mods.privateSector || 0) - 8;
@@ -846,151 +881,142 @@
         text: 'Ohne parlamentarische Basis und ohne Rückhalt in der Bevölkerung setzt das Parlament ein Amtsenthebungsverfahren in Gang. Es endet erfolgreich.' };
       return;
     }
-    /* Ende der aktuellen Amtszeit */
-    var endYear = st.termEndYear || B.META.termEndYear;
-    var endQuarter = st.termEndQuarter || B.META.termEndQuarter;
-    if (st.year > endYear || (st.year === endYear && st.q > endQuarter)) {
-      res.election = E.election(st);
+    /* Ende der Amtszeit */
+    if (st.year > B.META.termEndYear || (st.year === B.META.termEndYear && st.q > B.META.termEndQuarter)) {
+      E.election(st);
     }
   };
 
   /* ---------------------------------------------------------
-     Parlament, Entscheidungsketten und Regierungsapparat
+     Wahl am Ende der Amtszeit
      --------------------------------------------------------- */
-  var CATEGORY_MINISTRY = {
-    'budget': 'finance', 'economy': 'finance', 'digital': 'finance',
-    'health': 'health', 'education': 'education', 'social': 'social', 'agri': 'agriculture',
-    'transport': 'transport', 'energy': 'energy', 'justice': 'justice', 'state': 'justice',
-    'identity': 'justice', 'climate': 'climate', 'foreign': 'foreign', 'devolution': 'justice',
-    'Finanzen': 'finance', 'Wirtschaft': 'finance', 'Steuern': 'finance', 'Haushalt': 'finance',
-    'Gesundheit': 'health', 'Bildung': 'education', 'Arbeit': 'social', 'Soziales': 'social',
-    'Landwirtschaft': 'agriculture', 'Infrastruktur': 'transport', 'Verkehr': 'transport',
-    'Energie': 'energy', 'Justiz': 'justice', 'Staat': 'justice', 'Verfassung': 'justice',
-    'Umwelt': 'climate', 'Klima': 'climate', 'Katastrophe': 'climate',
-    'Außenpolitik': 'foreign', 'Diplomatie': 'foreign'
+  E.election = function (st) {
+    var share = 0, tot = 0;
+    M.GROUPS.forEach(function (g) {
+      if (!g.w) return;
+      share += g.w * st.approval[g.k]; tot += g.w;
+    });
+    var vote = share / tot;
+    vote += (st.ind.growth - 3) * 1.2
+      - (st.ind.inflation - 6.5) * 0.6
+      - st.streetPressure * 0.08
+      - 2.5;                                   /* Wechselstimmung nach einer vollen Amtszeit */
+    vote = U.clamp(vote, 5, 95);
+    var won = vote >= 50;
+    st.gameOver = {
+      kind: won ? 'reelected' : 'defeated',
+      title: won ? 'Wiedergewählt' : 'Abgewählt',
+      vote: vote,
+      text: won
+        ? 'Sie gewinnen die Präsidentschaftswahl mit geschätzten ' + U.n1(vote) + ' % und erhalten ein zweites Mandat.'
+        : 'Sie verlieren die Präsidentschaftswahl mit geschätzten ' + U.n1(vote) + ' %. Die Amtszeit endet.'
+    };
   };
 
-  function ministryKey(category) {
-    var cat = String(category || '');
-    for (var label in CATEGORY_MINISTRY) if (cat.indexOf(label) >= 0) return CATEGORY_MINISTRY[label];
-    return 'finance';
-  }
+  /* ---------------------------------------------------------
+     RÜCKSCHLÄGE UND GEGENMASSNAHMEN
 
+     Ein schlecht gelaufenes Quartal hinterlässt einen offenen
+     Missstand statt nur einer Zeile im Protokoll. Solange er offen
+     ist, richtet er weiter Schaden an. Der Spieler kann ihn mit
+     einer von mehreren Sofortmaßnahmen beheben; die wirken ohne
+     Umsetzungsfrist, kosten politisches Kapital und haben Folgen.
+     --------------------------------------------------------- */
+
+  /* Wie viele beschlossene Maßnahmen laufen wegen offener
+     struktureller Hindernisse ins Leere? */
+  E.countBlockedReforms = function (st) {
+    var n = 0;
+    for (var id in st.enacted) {
+      if (!st.enacted[id].active) continue;
+      var p = E.byId(id);
+      if (!p) continue;
+      if (SL.data.risks.openFor(st, p).length && E.riskFactor(st, p) < 0.7) n++;
+    }
+    return n;
+  };
+
+  /* ---------------------------------------------------------
+     Regierungsapparat
+
+     Ein Präsident regiert nicht selbst, sondern durch Ministerien
+     und Behörden. Die arbeiten jedes Quartal für sich, und wie gut
+     sie das tun, hängt an ihrer eigenen Leistungsfähigkeit und an
+     der Verwaltungskraft des Staates -- nicht am politischen Willen
+     im Präsidentenpalast. Ein schwaches Haus kostet dauerhaft
+     Wirkung, und dagegen hilft nur eine Entlassung.
+     --------------------------------------------------------- */
   function effectSummary(eff) {
     var out = [];
-    for (var k in (eff || {})) {
-      if (!eff[k]) continue;
-      out.push({ k: k, v: eff[k] });
-    }
+    for (var k in (eff || {})) if (eff[k]) out.push({ k: k, v: eff[k] });
     return out;
   }
 
-  function financeParts(rev, exp) {
-    rev = Number(rev) || 0; exp = Number(exp) || 0;
-    return {
-      plus: Math.max(0, rev) + Math.max(0, -exp),
-      minus: Math.max(0, -rev) + Math.max(0, exp)
-    };
+  function addGovernanceHistory(st, out) {
+    st.governanceHistory = st.governanceHistory || [];
+    st.governanceHistory.unshift(out);
+    st.governanceHistory = st.governanceHistory.slice(0, 60);
   }
 
-  E.recordDecisionFinance = function (st, item) {
-    var recurring = financeParts(item.recurringRev, item.recurringExp);
-    var once = financeParts(item.oneoffRev, item.oneoffExp);
-    if (!recurring.plus && !recurring.minus && !once.plus && !once.minus) return null;
-    st.decisionFinance = st.decisionFinance || [];
-    var entry = {
-      id: 'df_' + st.turn + '_' + st.decisionFinance.length + '_' + Math.floor(E.rand(st) * 100000),
-      sourceId: item.sourceId, sourceType: item.sourceType,
-      title: item.title, decision: item.decision || '', turn: st.turn,
-      year: st.year, q: st.q, recurringPlus: recurring.plus, recurringMinus: recurring.minus,
-      oneoffPlus: once.plus, oneoffMinus: once.minus, active: item.active !== false
+  E.processGovernance = function (st, res) {
+    if (!Gov.MINISTRIES.length) return;
+    var useMinister = E.rand(st) < 0.7;
+    var def, actor, success, eff, chance, scandal = false;
+    if (useMinister) {
+      def = Gov.MINISTRIES[Math.floor(E.rand(st) * Gov.MINISTRIES.length)];
+      actor = st.cabinet[def.k];
+      if (!actor) return;
+      chance = U.clamp(0.2 + actor.performance / 140 + st.ind.stateCap / 500, 0.2, 0.86);
+      success = E.rand(st) < chance;
+      eff = success ? def.successEff : def.failEff;
+      E.applyMods(st, eff, 1);
+      actor.performance = U.clamp(actor.performance + (success ? 4 : -7), 0, 100);
+      if (success) actor.successes++; else actor.failures++;
+      actor.lastOutcomeTurn = st.turn;
+      /* Wo wenig Korruptionskontrolle ist, wird aus einem Fehlschlag
+         eher ein Skandal als anderswo. */
+      if (!success && E.rand(st) < U.clamp(0.08 + (45 - st.ind.corruption) / 180, 0.06, 0.28)) {
+        scandal = true;
+        actor.scandal = { turn: st.turn, title: 'Vergabe- und Aufsichtsskandal',
+          text: 'Interne Unterlagen werfen Fragen zu Aufsicht und Vergabe im Ressort auf.' };
+        actor.performance = U.clamp(actor.performance - 8, 0, 100);
+        E.applyMods(st, { legitimacy: -1.8, corruption: -1.2 }, 1);
+      }
+    } else {
+      def = Gov.INSTITUTIONS[Math.floor(E.rand(st) * Gov.INSTITUTIONS.length)];
+      actor = st.institutions[def.k];
+      if (!actor) return;
+      chance = U.clamp(0.25 + actor.performance / 150 + st.ind.stateCap / 550, 0.22, 0.85);
+      success = E.rand(st) < chance;
+      eff = success ? def.successEff : def.failEff;
+      E.applyMods(st, eff, 1);
+      actor.performance = U.clamp(actor.performance + (success ? 3 : -6), 0, 100);
+      if (success) actor.successes++; else actor.failures++;
+      actor.lastOutcomeTurn = st.turn;
+    }
+    var label = def.ministry || def.name;
+    var outcome = {
+      kind: success ? 'good' : 'bad', type: useMinister ? 'ministry' : 'institution', turn: st.turn,
+      title: scandal ? 'Skandal im Ressort ' + label : (success ? 'Erfolg: ' : 'Versagen: ') + label,
+      source: useMinister ? actor.name : def.name, actor: label,
+      text: scandal
+        ? actor.scandal.text + ' Sie können das verantwortliche Kabinettsmitglied direkt entlassen.'
+        : (success ? def.success : def.failure),
+      effects: effectSummary(eff), ministerKey: useMinister ? def.k : null, scandal: scandal
     };
-    st.decisionFinance.push(entry);
-    return entry;
+    addGovernanceHistory(st, outcome);
+    St.log(st, success ? 'good' : 'bad', outcome.title + ': ' + outcome.text);
+    if (res && res.messages) res.messages.push(outcome.title);
   };
 
-  E.decisionFinanceSummary = function (st) {
-    var scale = E.scale(st), recurringPlus = 0, recurringMinus = 0, oneoffPlus = 0, oneoffMinus = 0;
-    (st.decisionFinance || []).forEach(function (entry) {
-      if (entry.active !== false) {
-        recurringPlus += (entry.recurringPlus || 0) * scale;
-        recurringMinus += (entry.recurringMinus || 0) * scale;
-      }
-      oneoffPlus += entry.oneoffPlus || 0;
-      oneoffMinus += entry.oneoffMinus || 0;
-    });
-    return {
-      recurring: { plus: recurringPlus, minus: recurringMinus, total: recurringPlus - recurringMinus },
-      oneoff: { plus: oneoffPlus, minus: oneoffMinus, total: oneoffPlus - oneoffMinus }
-    };
-  };
-
-  E.queueConsequence = function (st, item) {
-    st.consequenceQueue = st.consequenceQueue || [];
-    item.id = item.id || ('cq_' + st.turn + '_' + st.consequenceQueue.length + '_' + Math.floor(E.rand(st) * 100000));
-    st.consequenceQueue.push(item);
-    return item;
-  };
-
-  E.shiftSeats = function (st, delta, reason) {
-    if (!st.parliament || !st.parliament.seats) return 0;
-    var parties = st.parliament.seats;
-    var gov = parties.NPP;
-    if (gov === undefined) return 0;
-    var total = st.seatsTotal || 225;
-    var wanted = Math.round(delta || 0), moved = 0, k, pickKey;
-    if (wanted > 0) {
-      while (moved < wanted && parties.NPP < total) {
-        pickKey = null;
-        for (k in parties) if (k !== 'NPP' && parties[k] > 0 && (!pickKey || parties[k] > parties[pickKey])) pickKey = k;
-        if (!pickKey) break;
-        parties[pickKey]--; parties.NPP++; moved++;
-      }
-    } else if (wanted < 0) {
-      while (moved > wanted && parties.NPP > 0) {
-        pickKey = parties.SJB !== undefined ? 'SJB' : 'OTH';
-        if (parties[pickKey] === undefined) break;
-        parties.NPP--; parties[pickKey]++; moved--;
-      }
-    }
-    st.seatsGov = parties.NPP;
-    st.parliament.history = st.parliament.history || [];
-    if (moved) {
-      st.parliament.history.unshift({ turn: st.turn, delta: moved, reason: reason || 'Sitzverschiebung', seats: st.seatsGov });
-      st.parliament.history = st.parliament.history.slice(0, 24);
-    }
-    return moved;
-  };
-
-  E.canCourtSeats = function (st) {
-    if (!st.parliament) return { ok: false, why: 'Keine Parlamentsdaten verfügbar.' };
-    if (st.parliament.lastWhipTurn === st.turn) return { ok: false, why: 'In diesem Quartal wurden bereits Fraktionsgespräche geführt.' };
-    if (st.seatsGov >= (st.seatsTotal || 225)) return { ok: false, why: 'Alle Sitze gehören bereits zur Regierungsfraktion.' };
-    if (st.pc < 14) return { ok: false, why: 'Dafür werden 14 PK benötigt.' };
-    return { ok: true };
-  };
-
-  E.courtSeats = function (st) {
-    var can = E.canCourtSeats(st);
-    if (!can.ok) return can;
-    st.pc -= 14;
-    st.parliament.lastWhipTurn = st.turn;
-    var chance = U.clamp(0.24 + st.approvalOverall / 240 + st.ind.legitimacy / 500 - st.streetPressure / 600, 0.12, 0.78);
-    if (E.rand(st) < chance) {
-      var gained = E.shiftSeats(st, 1 + Math.floor(E.rand(st) * 4), 'Erfolgreiche Fraktionsgespräche');
-      st.mods.legitimacy = (st.mods.legitimacy || 0) + 0.5;
-      St.log(st, 'good', 'Fraktionsgespräche erfolgreich: ' + gained + ' Abgeordnete schließen sich der Regierung an.');
-      return { ok: true, success: true, seats: gained, chance: chance };
-    }
-    st.mods.legitimacy = (st.mods.legitimacy || 0) - 0.8;
-    St.log(st, 'warn', 'Die Fraktionsgespräche bleiben ohne Ergebnis.');
-    return { ok: true, success: false, seats: 0, chance: chance };
-  };
-
+  /* Eine Entlassung ist kein freies Werkzeug: ohne Anlass wirkt sie
+     willkürlich, und sie kostet politisches Kapital. */
   E.canDismissMinister = function (st, key) {
     var c = st.cabinet && st.cabinet[key];
     if (!c) return { ok: false, why: 'Dieses Regierungsmitglied ist nicht im Kabinett.' };
-    if (!(c.scandal || c.failures >= 2 || c.performance < 38)) return { ok: false, why: 'Für eine Entlassung liegt derzeit kein Leistungs- oder Integritätsgrund vor.' };
+    if (!(c.scandal || c.failures >= 2 || c.performance < 38)) {
+      return { ok: false, why: 'Für eine Entlassung liegt derzeit kein Leistungs- oder Integritätsgrund vor.' };
+    }
     if (st.pc < 6) return { ok: false, why: 'Für die Kabinettsumbildung werden 6 PK benötigt.' };
     return { ok: true };
   };
@@ -1006,183 +1032,244 @@
     c.scandal = null; c.appointedTurn = st.turn; c.lastOutcomeTurn = st.turn;
     st.pc -= 6;
     st.mods.legitimacy = (st.mods.legitimacy || 0) + 1.2;
-    St.log(st, 'info', old + ' wird entlassen. ' + c.name + ' übernimmt ' + (def ? def.ministry : 'das Ressort') + '.');
+    St.log(st, 'info', old + ' wird entlassen. ' + c.name + ' übernimmt '
+      + (def ? def.ministry : 'das Ressort') + '.');
     return { ok: true, oldName: old, newName: c.name };
   };
 
-  function addGovernanceHistory(st, out) {
-    st.governanceHistory = st.governanceHistory || [];
-    st.governanceHistory.unshift(out);
-    st.governanceHistory = st.governanceHistory.slice(0, 60);
-  }
+  /* Missstand unmittelbar öffnen, etwa als Folge einer
+     Entscheidung in einem Ereignis. */
+  E.openSetback = function (st, key) {
+    var meta = SL.data.setbacks.BY_KEY[key];
+    if (!meta || !st.setbacks || st.setbacks[key]) return false;
+    st.setbacks[key] = { since: st.turn, sev: meta.sev || 2 };
+    st.setbackSeen[key] = (st.setbackSeen[key] || 0) + 1;
+    St.log(st, 'bad', meta.label + ': ' + meta.desc);
+    return true;
+  };
 
-  E.processConsequences = function (st, res) {
-    var keep = [];
-    (st.consequenceQueue || []).forEach(function (item) {
-      if (item.dueTurn > st.turn) { keep.push(item); return; }
-      var def = Gov.MINISTRY_BY_KEY[ministryKey(item.category)], cab = def && st.cabinet && st.cabinet[def.k];
-      var p = item.kind === 'policy' ? E.byId(item.sourceId) : null;
-      var rf = p ? E.riskFactor(st, p) : 0.75;
-      var chance = U.clamp(0.28 + rf * 0.35 + (st.ind.stateCap || 40) / 350 + (cab ? cab.performance : 50) / 500, 0.22, 0.9);
-      var success = E.rand(st) < chance;
-      var eff = success ? { stateCap: 0.6, legitimacy: 0.7 } : { stateCap: -0.9, legitimacy: -1.0 };
-      if (p && p.eff) E.applyMods(st, p.eff, success ? 0.08 : -0.05);
-      E.applyMods(st, eff, 1);
-      if (cab) {
-        cab.performance = U.clamp(cab.performance + (success ? 3 : -5), 0, 100);
-        if (success) cab.successes++; else cab.failures++;
-        cab.lastOutcomeTurn = st.turn;
+  E.openSetbacks = function (st) {
+    var out = [];
+    for (var k in (st.setbacks || {})) {
+      var meta = SL.data.setbacks.BY_KEY[k];
+      if (meta) out.push({ meta: meta, rec: st.setbacks[k] });
+    }
+    out.sort(function (a, b) { return (b.meta.sev - a.meta.sev) || (a.rec.since - b.rec.since); });
+    return out;
+  };
+
+  /* Neue Missstände erkennen, erledigte streichen */
+  E.scanSetbacks = function (st, res, ctx) {
+    st.setbacks = st.setbacks || {};
+    ctx = ctx || {};
+    ctx.blockedReforms = E.countBlockedReforms(st);
+
+    SL.data.setbacks.SETBACKS.forEach(function (s) {
+      var open = !!st.setbacks[s.k];
+      if (open) {
+        /* Erledigt sich der Missstand von selbst? */
+        var done = false;
+        try { done = s.gone ? !!s.gone(st, ctx) : false; } catch (e) { done = false; }
+        if (done) {
+          delete st.setbacks[s.k];
+          St.log(st, 'good', 'Behoben: ' + s.label + '.');
+          res && res.messages.push({ kind: 'good', title: 'Missstand behoben', text: s.label + '.' });
+        }
+        return;
       }
-      var open = p ? SL.data.risks.openFor(st, p) : [];
-      var outcome = {
-        kind: success ? 'good' : 'bad', type: 'consequence', turn: st.turn,
-        title: success ? 'Entscheidung zahlt sich aus' : 'Folgerisiko eingetreten',
-        source: item.sourceTitle, actor: def ? def.ministry : '',
-        text: success
-          ? 'Die Entscheidung „' + item.sourceTitle + '“ zeigt im Verwaltungsalltag zusätzliche Wirkung.'
-          : 'Bei „' + item.sourceTitle + '“ treten Umsetzungsprobleme auf' + (open.length ? ': ' + open.map(function (r) { return r.short; }).join(', ') : '.') ,
-        effects: effectSummary(eff)
-      };
-      res.outcomes.push(outcome); addGovernanceHistory(st, outcome);
-      St.log(st, success ? 'good' : 'bad', outcome.title + ': ' + outcome.text);
+      var hit = false;
+      try { hit = s.when ? !!s.when(st, ctx) : false; } catch (e) { hit = false; }
+      if (!hit) return;
+      st.setbacks[s.k] = { since: st.turn, sev: s.sev || 2 };
+      st.setbackSeen[s.k] = (st.setbackSeen[s.k] || 0) + 1;
+      St.log(st, 'bad', s.label + ': ' + s.desc);
+      res && res.messages.push({ kind: 'bad', title: s.label, text: 'Gegenmaßnahmen stehen unter „Sofortmaßnahmen“ bereit.' });
     });
-    st.consequenceQueue = keep;
   };
 
-  E.processGovernance = function (st, res) {
-    if (!Gov.MINISTRIES.length) return;
-    var useMinister = E.rand(st) < 0.7;
-    var def, actor, success, eff, chance, scandal = false;
-    if (useMinister) {
-      def = Gov.MINISTRIES[Math.floor(E.rand(st) * Gov.MINISTRIES.length)];
-      actor = st.cabinet[def.k];
-      chance = U.clamp(0.2 + actor.performance / 140 + st.ind.stateCap / 500, 0.2, 0.86);
-      success = E.rand(st) < chance;
-      eff = success ? def.successEff : def.failEff;
-      E.applyMods(st, eff, 1);
-      actor.performance = U.clamp(actor.performance + (success ? 4 : -7), 0, 100);
-      if (success) actor.successes++; else actor.failures++;
-      actor.lastOutcomeTurn = st.turn;
-      if (!success && E.rand(st) < U.clamp(0.08 + (45 - st.ind.corruption) / 180, 0.06, 0.28)) {
-        scandal = true;
-        actor.scandal = { turn: st.turn, title: 'Vergabe- und Aufsichtsskandal', text: 'Interne Unterlagen werfen Fragen zu Aufsicht und Vergabe im Ressort auf.' };
-        actor.performance = U.clamp(actor.performance - 8, 0, 100);
-        E.applyMods(st, { legitimacy: -1.8, corruption: -1.2 }, 1);
+  /* Laufender Schaden aus offenen Missständen */
+  E.setbackDrift = function (st) {
+    E.openSetbacks(st).forEach(function (o) {
+      if (!o.meta.drift) return;
+      for (var k in o.meta.drift) {
+        if (k === 'growth') { st.shockGrowth = (st.shockGrowth || 0) + o.meta.drift[k]; continue; }
+        st.drift[k] = (st.drift[k] || 0) + o.meta.drift[k];
       }
-    } else {
-      def = Gov.INSTITUTIONS[Math.floor(E.rand(st) * Gov.INSTITUTIONS.length)];
-      actor = st.institutions[def.k];
-      chance = U.clamp(0.25 + actor.performance / 150 + st.ind.stateCap / 550, 0.22, 0.85);
-      success = E.rand(st) < chance;
-      eff = success ? def.successEff : def.failEff;
-      E.applyMods(st, eff, 1);
-      actor.performance = U.clamp(actor.performance + (success ? 3 : -6), 0, 100);
-      if (success) actor.successes++; else actor.failures++;
-      actor.lastOutcomeTurn = st.turn;
-    }
-    var label = def.ministry || def.name;
-    var outcome = {
-      kind: success ? 'good' : 'bad', type: useMinister ? 'ministry' : 'institution', turn: st.turn,
-      title: scandal ? 'Skandal im ' + label : (success ? 'Erfolg: ' : 'Versagen: ') + label,
-      source: useMinister ? actor.name : def.name, actor: label,
-      text: scandal ? actor.scandal.text + ' Sie können das verantwortliche Kabinettsmitglied direkt entlassen.' : (success ? def.success : def.failure),
-      effects: effectSummary(eff), ministerKey: useMinister ? def.k : null, scandal: scandal
-    };
-    res.outcomes.push(outcome); addGovernanceHistory(st, outcome);
-    St.log(st, success ? 'good' : 'bad', outcome.title + ': ' + outcome.text);
+    });
   };
 
-  E.processParliament = function (st, res) {
-    var delta = 0, why = '';
-    if (st.approvalOverall >= 58 && st.ind.legitimacy >= 52 && E.rand(st) < 0.22) {
-      delta = 1 + Math.floor(E.rand(st) * 2); why = 'Übertritt nach sichtbaren Regierungserfolgen';
-    } else if (st.approvalOverall < 38 && E.rand(st) < 0.28) {
-      delta = -(1 + Math.floor(E.rand(st) * 3)); why = 'Abspaltung nach Vertrauensverlust';
-    }
-    delta = E.shiftSeats(st, delta, why);
-    if (delta) res.outcomes.push({ kind: delta > 0 ? 'good' : 'bad', type: 'parliament', title: 'Sitzverteilung verändert', source: 'Parlament', actor: 'Regierungsfraktion', text: (delta > 0 ? delta + ' Abgeordnete wechseln zur Regierungsfraktion.' : (-delta) + ' Abgeordnete verlassen die Regierungsfraktion.'), seats: delta, effects: [] });
+  E.remedyKey = function (k, idx) { return k + ':' + idx; };
+
+  E.remedyUsed = function (st, k, idx) {
+    return !!(st.remediesUsed && st.remediesUsed[E.remedyKey(k, idx)]);
   };
 
-  /* ---------------------------------------------------------
-     Wahl am Ende der Amtszeit
-     --------------------------------------------------------- */
-  E.election = function (st) {
-    st.termNumber = st.termNumber || 1;
-    st.electionHistory = st.electionHistory || [];
-    if (st.termLimit === undefined) st.termLimit = 2;
-    var electionYear = st.termEndYear || st.year;
+  E.canRemedy = function (st, k, idx) {
+    var meta = SL.data.setbacks.BY_KEY[k];
+    if (!meta) return { ok: false, why: 'Unbekannter Missstand.' };
+    if (!st.setbacks[k]) return { ok: false, why: 'Der Missstand besteht nicht mehr.' };
+    var fix = meta.fix[idx];
+    if (!fix) return { ok: false, why: 'Unbekannte Gegenmaßnahme.' };
+    if (st.gameOver) return { ok: false, why: 'Amtszeit beendet.' };
+    if (fix.once && E.remedyUsed(st, k, idx)) return { ok: false, why: 'Dieses Mittel steht nur einmal je Amtszeit zur Verfügung.' };
+    if (st.pc < fix.pc) return { ok: false, why: 'Politisches Kapital reicht nicht (' + fix.pc + ' nötig).' };
+    return { ok: true };
+  };
 
-    if (st.termLimit !== null && st.termNumber >= st.termLimit) {
-      var limited = {
-        eligible: false, won: false, kind: 'term-limited',
-        title: 'Amtszeitlimit erreicht', term: st.termNumber,
-        text: 'Nach ' + st.termNumber + ' Amtszeiten dürfen Sie nicht erneut kandidieren. ' +
-          'Die Amtszeit endet. Für eine weitere Kandidatur hätte die Begrenzung vorher aufgehoben werden müssen.'
-      };
-      st.electionHistory.push({
-        year: electionYear, term: st.termNumber, eligible: false, won: false, vote: null
-      });
-      st.gameOver = limited;
-      st.lastElection = limited;
-      return limited;
+  /* Gegenmaßnahme ergreifen. Wirkt sofort, ohne Umsetzungsfrist. */
+  E.applyRemedy = function (st, k, idx) {
+    var chk = E.canRemedy(st, k, idx);
+    if (!chk.ok) return { ok: false, why: chk.why };
+    var meta = SL.data.setbacks.BY_KEY[k], fix = meta.fix[idx];
+
+    st.pc -= fix.pc;
+    st.remediesUsed[E.remedyKey(k, idx)] = st.turn;
+
+    /* Manche Mittel können scheitern. Dann bleibt der Missstand offen. */
+    var failed = false;
+    if (fix.chance !== undefined && E.rand(st) > fix.chance) failed = true;
+
+    if (failed) {
+      E.applyMods(st, fix.failEff, 1);
+      E.recomputeIndex(st);
+      St.log(st, 'bad', 'Gescheitert: ' + fix.t + '. ' + (fix.failNote || ''));
+      return { ok: true, failed: true, note: fix.failNote || 'Die Maßnahme ist gescheitert.' };
     }
 
-    var share = 0, tot = 0;
-    M.GROUPS.forEach(function (g) {
-      if (!g.w) return;
-      share += g.w * st.approval[g.k]; tot += g.w;
-    });
-    var vote = share / tot;
-    vote += (st.ind.growth - 3) * 1.2
-      - (st.ind.inflation - 6.5) * 0.6
-      - st.streetPressure * 0.08
-      - 2.5
-      - Math.min(8, Math.max(0, st.termNumber - 1) * 1.25); /* Langzeitmalus bleibt überwindbar */
-    vote = U.clamp(vote, 5, 95);
-    var won = vote >= 50;
-    var nextTerm = st.termNumber + 1;
-    var result = {
-      eligible: true, won: won,
-      kind: won ? 'reelected' : 'defeated',
-      title: won ? 'Wiedergewählt' : 'Abgewählt', vote: vote,
-      term: st.termNumber, wonTerm: won ? nextTerm : null,
-      text: won
-        ? 'Sie gewinnen die Präsidentschaftswahl mit geschätzten ' + U.n1(vote) +
-          ' % und beginnen Ihre ' + nextTerm + '. Amtszeit.'
-        : 'Sie verlieren die Präsidentschaftswahl mit geschätzten ' + U.n1(vote) + ' %. Ihre Regierungszeit endet.'
-    };
-    st.electionHistory.push({
-      year: electionYear, term: st.termNumber, wonTerm: won ? nextTerm : null,
-      eligible: true, won: won, vote: vote
-    });
-    st.lastElection = result;
-
-    if (!won) {
-      st.gameOver = result;
-      return result;
+    E.applyMods(st, fix.eff, 1);
+    E.applyGroups(st, fix.grp, 1);
+    if (fix.fiscal) {
+      /* Einmalige Haushaltswirkung im laufenden Quartal */
+      if (fix.fiscal.exp) st.oneoffQueue = (st.oneoffQueue || 0) + fix.fiscal.exp;
+      if (fix.fiscal.rev) st.oneoffQueue = (st.oneoffQueue || 0) - fix.fiscal.rev;
     }
+    if (fix.budget) E.shiftBudget(st, fix.budget);
+    E.remedySpecial(st, fix, k);
+    E.recomputeIndex(st);
+    E.updateApproval(st);
 
-    st.termNumber = nextTerm;
-    st.electionsWon = (st.electionsWon || 0) + 1;
-    st.termStartYear = st.year;
-    st.termStartQuarter = st.q;
-    /* Eine volle Amtszeit umfasst 20 Quartale einschließlich des Startquartals. */
-    var endIndex = st.year * 4 + (st.q - 1) + 19;
-    st.termEndYear = Math.floor(endIndex / 4);
-    st.termEndQuarter = (endIndex % 4) + 1;
-    st.gameOver = null;
-    st.pendingEvent = null;
-    st.crisisCount = 0;
-    st.pc = U.clamp(st.pc + 28, 0, 220);
-    st.streetPressure = U.clamp(st.streetPressure * 0.72, 0, 100);
-    st.mods.legitimacy = (st.mods.legitimacy || 0) + 3;
-    var bump = U.clamp(2 + (vote - 50) * 0.18, 2, 6);
-    M.GROUPS.forEach(function (g) {
-      st.approval[g.k] = U.clamp(st.approval[g.k] + bump, 0, 100);
+    /* Der Missstand gilt als behoben, sofern die Lage das hergibt. */
+    delete st.setbacks[k];
+    St.log(st, 'good', 'Sofortmaßnahme: ' + fix.t + ' (' + fix.pc + ' PK).');
+    return { ok: true, failed: false };
+  };
+
+  /* Dauerhafte Verschiebung der Haushaltsregler.
+     Eine Konsolidierung, die nur ein Quartal hält, ist keine.
+     Der Spieler sieht die verschobenen Regler anschließend im
+     Haushaltsplan und kann sie dort wieder anfassen.
+       revScale / expScale  Faktor auf alle steuerbaren Posten
+       lines                Faktor auf einzelne Posten
+     Die Grenzen der Regler werden dabei eingehalten. */
+  E.shiftBudget = function (st, spec) {
+    var moved = [];
+    function apply(line, store, factor) {
+      if (!line || line.locked || !factor || factor === 1) return;
+      var before = store[line.k];
+      var v = U.clamp(before * factor, line.min, line.max);
+      if (Math.abs(v - before) < 0.5) return;
+      store[line.k] = v;
+      moved.push(line.label + ' ' + U.sign((v - before) / line.base * 100, 0) + ' %');
+    }
+    B.REVENUE.forEach(function (r) {
+      apply(r, st.budget.rev, (spec.lines && spec.lines[r.k]) || spec.revScale);
     });
-    St.log(st, 'good', 'Präsidentschaftswahl gewonnen: ' + U.n1(vote) + ' %. Beginn der ' +
-      st.termNumber + '. Amtszeit; nächste reguläre Wahl ' + st.termEndYear + '.');
-    return result;
+    B.SPENDING.forEach(function (e) {
+      apply(e, st.budget.exp, (spec.lines && spec.lines[e.k]) || spec.expScale);
+    });
+    if (moved.length) {
+      St.log(st, 'info', 'Haushaltsposten angepasst: ' + moved.slice(0, 6).join(', ')
+        + (moved.length > 6 ? ' und ' + (moved.length - 6) + ' weitere' : '') + '.');
+    }
+    return moved;
+  };
+
+  E.remedySpecial = function (st, fix, setbackKey) {
+    switch (fix.special) {
+      case 'calm_street':
+        st.streetPressure = Math.max(0, st.streetPressure - 24); break;
+      case 'calm_street_soft':
+        st.streetPressure = Math.max(0, st.streetPressure - 12); break;
+      case 'crackdown':
+        st.streetPressure = Math.max(0, st.streetPressure - 32);
+        st.drift.pressFree = (st.drift.pressFree || 0) - 5;
+        st.flags.crackdown = true;
+        break;
+      case 'regain_seats':
+        st.seatsGov = Math.min(st.seatsTotal, st.seatsGov + 3 + Math.floor(E.rand(st) * 5));
+        St.log(st, 'info', 'Die Fraktion zählt wieder ' + st.seatsGov + ' von 225 Abgeordneten.');
+        break;
+      case 'hold_seats':
+        st.flags.partyDiscipline = true; break;
+      case 'snap_election': {
+        /* Die Machtfrage: das Ergebnis folgt der Zustimmung. */
+        var swing = (st.approvalOverall - 46) * 1.6 + (E.rand(st) - 0.5) * 14;
+        var seats = Math.round(U.clamp(113 + swing, 55, 200));
+        var before = st.seatsGov;
+        st.seatsGov = seats;
+        st.pc = U.clamp(st.pc + (seats > before ? 18 : -8), 0, 220);
+        St.log(st, seats > before ? 'good' : 'bad',
+          'Vorgezogene Parlamentswahl: die Regierungsfraktion kommt auf ' + seats + ' von 225 Sitzen (vorher ' + before + ').');
+        break;
+      }
+      case 'approval_boost':
+        M.GROUPS.forEach(function (g) { st.approval[g.k] = U.clamp(st.approval[g.k] + 3.5, 0, 100); });
+        break;
+      case 'imf_restart':
+        st.imf.programActive = true;
+        st.imf.reviewsFailed = 0;
+        st.imf.nextReviewTurn = st.turn + 3;
+        st.effRate = Math.max(0.06, st.effRate - 0.015);
+        St.log(st, 'good', 'Ein neues Programm mit dem Währungsfonds steht. Die Geber nehmen ihre Auszahlungen wieder auf.');
+        break;
+      case 'lower_rate':
+        st.effRate = Math.max(0.055, st.effRate - 0.008);
+        st.flags.debtOffice = true;
+        break;
+      case 'trim_revenue':
+        B.REVENUE.forEach(function (r) {
+          if (!r.base || r.locked) return;
+          var cap = r.base * 1.25;
+          if (st.budget.rev[r.k] > cap) st.budget.rev[r.k] = cap;
+        });
+        St.log(st, 'info', 'Die überdehnten Sätze sind auf höchstens 25 % über dem Ausgangswert zurückgenommen.');
+        break;
+      case 'restore_spending':
+        B.SPENDING.forEach(function (e) {
+          if (!e.base || e.locked) return;
+          var floor = e.base * 0.85;
+          if (st.budget.exp[e.k] < floor) st.budget.exp[e.k] = floor;
+        });
+        St.log(st, 'info', 'Die Kürzungen sind auf höchstens 15 % unter dem Ausgangswert zurückgenommen.');
+        break;
+      case 'shift_cuts': {
+        /* Der Sparbetrag bleibt, aber er wandert von der
+           Grundversorgung in Verwaltung und Fuhrpark. */
+        var freed = 0;
+        ['health', 'education', 'social', 'provinces'].forEach(function (k) {
+          var line = B.SPENDING.filter(function (x) { return x.k === k; })[0];
+          if (!line) return;
+          var floor = line.base * 0.85;
+          if (st.budget.exp[k] < floor) { freed += floor - st.budget.exp[k]; st.budget.exp[k] = floor; }
+        });
+        var take = freed;
+        ['ministries', 'defence'].forEach(function (k) {
+          var line = B.SPENDING.filter(function (x) { return x.k === k; })[0];
+          if (!line || take <= 0) return;
+          var room = Math.max(0, st.budget.exp[k] - line.min);
+          var cut = Math.min(room, take);
+          st.budget.exp[k] -= cut; take -= cut;
+        });
+        St.log(st, 'info', 'Rund ' + U.n0(freed - take) + ' Mrd. sind aus Verwaltung und Verteidigung in die Grundversorgung umgeschichtet.');
+        break;
+      }
+      case 'delivery_unit':
+        st.flags.deliveryUnit = true;
+        break;
+      case 'risk_progress':
+        st.flags.riskPriority = true;
+        break;
+    }
   };
 
   /* ---------------------------------------------------------
@@ -1228,26 +1315,30 @@
     }
     if (o.pc) st.pc = U.clamp(st.pc + o.pc, 0, 220);
 
-    E.recordDecisionFinance(st, {
-      sourceId: ev.id, sourceType: 'event', title: ev.title, decision: o.t,
-      oneoffRev: o.fiscal && o.fiscal.rev, oneoffExp: o.fiscal && o.fiscal.exp,
-      active: false
-    });
-
     switch (o.special) {
       case 'calm_street': st.streetPressure = Math.max(0, st.streetPressure - 22); break;
       case 'calm_street_soft': st.streetPressure = Math.max(0, st.streetPressure - 10); break;
       case 'crackdown': st.streetPressure = Math.max(0, st.streetPressure - 30); st.drift.pressFree = (st.drift.pressFree || 0) - 4; break;
       case 'keep_seats': break;
-      case 'lose_seats': E.shiftSeats(st, -(4 + Math.floor(E.rand(st) * 7)), 'Folge der Entscheidung „' + o.t + '“'); break;
-      case 'lose_seats_half': E.shiftSeats(st, -(2 + Math.floor(E.rand(st) * 4)), 'Folge der Entscheidung „' + o.t + '“'); break;
+      case 'lose_seats': st.seatsGov = Math.max(0, st.seatsGov - (4 + Math.floor(E.rand(st) * 7))); break;
+      case 'lose_seats_half': st.seatsGov = Math.max(0, st.seatsGov - (2 + Math.floor(E.rand(st) * 4))); break;
+      case 'gain_seats':
+        st.seatsGov = Math.min(st.seatsTotal, st.seatsGov + (4 + Math.floor(E.rand(st) * 5)));
+        St.log(st, 'info', 'Die Regierungsfraktion zählt jetzt ' + st.seatsGov + ' von 225 Abgeordneten.');
+        break;
+      case 'coalition_rift': E.openSetback(st, 'coalition_rift'); break;
       case 'warn_only': st.shockGrowth = (st.shockGrowth || 0) - 0.6; st.drift.housing = (st.drift.housing || 0) - 5; break;
+      /* Rechtzeitige Evakuierung: der Sturm kommt trotzdem, aber er
+         kostet weniger. Und eine Verwaltung, die es einmal geübt hat,
+         kann es beim nächsten Mal wieder. */
+      case 'evacuate':
+        st.drift.disasterPrep = (st.drift.disasterPrep || 0) + 4;
+        st.drift.housing = (st.drift.housing || 0) + 2;
+        st.shockGrowth = (st.shockGrowth || 0) + 0.35;
+        St.log(st, 'good', 'Die Vorsorgeevakuierung hat gegriffen. Die Schäden bleiben deutlich unter dem, was ohne sie zu erwarten war.');
+        break;
     }
     E.recomputeIndex(st);
-    E.queueConsequence(st, {
-      kind: 'event', sourceId: ev.id, sourceTitle: ev.title,
-      decision: o.t, category: ev.cat || '', dueTurn: st.turn + 1
-    });
     St.log(st, 'info', ev.title + ' – Entscheidung: ' + o.t);
     st.pendingEvent = null;
   };

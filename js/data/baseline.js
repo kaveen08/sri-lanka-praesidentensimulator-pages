@@ -243,7 +243,7 @@
       note: 'Die Provinzraete haben kaum eigene Einnahmen. Fast alles kommt aus Colombo.',
       cutNote: 'Die Provinzen haben kaum eigene Einnahmen. Faellt der Transfer, faellt die Leistung vor Ort aus.',
       cutStrain: { regionalBalance: -11, stateCap: -6, health: -3, education: -3 }, cutGrp: { tamilNE: -9, malaiyaha: -8, farmers: -7, sinhalaRural: -6 },
-      eff: { regionalBalanceX: 0, stateCap: 0.014, infra: 0.020 }, grp: { tamilNE: 0.020, malaiyaha: 0.018, farmers: 0.014 } },
+      eff: { stateCap: 0.014, infra: 0.020 }, grp: { tamilNE: 0.020, malaiyaha: 0.018, farmers: 0.014 } },
     { k: 'ministries',label: 'Ministerienbetrieb und Verwaltung', base: 330, min: 180, max: 620, step: 5,
       note: 'Laufender Betrieb von 25 Ministerien und Hunderten Behoerden.',
       cutNote: 'Unter einer bestimmten Schwelle kann die Verwaltung Beschlossenes nicht mehr ausfuehren.',

@@ -53,6 +53,80 @@
     ]);
   };
 
+  /* ---------- Internationaler Vergleich ----------
+     Eine Skala, auf der Sri Lanka und die sechs Vergleichsländer
+     nebeneinander stehen. Die Skala wird nach den tatsächlich
+     vorkommenden Werten aufgespannt, nicht nach den Grenzen des
+     Indikators: Sonst drängen sich bei absoluten Größen wie den
+     Emissionen alle sieben Länder in dieselbe Ecke.              */
+  X.benchmarkBar = function (st, meta) {
+    var BM = SL.data.benchmarks;
+    if (!BM.comparable(meta.k)) {
+      return el('div', { class: 'bm-none', title: BM.NOT_COMPARABLE[meta.k] || '' },
+        ['kein Ländervergleich möglich']);
+    }
+
+    var pts = [{ k: 'LK', name: 'Sri Lanka', short: 'LK', color: 'var(--cy-bright)', v: st.ind[meta.k], self: true }];
+    BM.COUNTRIES.forEach(function (c) {
+      var v = BM.value(st, c.k, meta.k);
+      if (v === undefined || v === null || isNaN(v)) return;
+      pts.push({ k: c.k, name: c.name, short: c.short, color: c.color, v: v, note: BM.note(c.k, meta.k) });
+    });
+    if (pts.length < 2) return el('div', { class: 'bm-none' }, ['kein Ländervergleich möglich']);
+
+    var vals = pts.map(function (p) { return p.v; });
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+
+    /* Bei absoluten Größen liegen Welten zwischen den Ländern: Sri Lankas
+       Reserven sind 6,6 Mrd., Chinas 3.250. Linear gezeichnet drängen sich
+       sechs Länder in der linken Ecke. Ab einem Verhältnis von 20 zu 1 wird
+       deshalb logarithmisch skaliert, damit die Abstände lesbar bleiben. */
+    var logScale = lo > 0 && hi / lo > 20;
+    var pos;
+    if (logScale) {
+      var l0 = Math.log(lo), l1 = Math.log(hi), lpad = (l1 - l0) * 0.08;
+      l0 -= lpad; l1 += lpad;
+      pos = function (v) { return U.clamp((Math.log(Math.max(v, 1e-6)) - l0) / (l1 - l0) * 100, 0, 100); };
+    } else {
+      var pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.08 || 1;
+      lo -= pad; hi += pad;
+      pos = function (v) { return U.clamp((v - lo) / (hi - lo) * 100, 0, 100); };
+    }
+
+    /* Reihenfolge von gut nach schlecht, damit die Legende die
+       Rangfolge zeigt und nicht die Datenreihenfolge. */
+    var ranked = pts.slice().sort(function (a, b) { return meta.inv ? a.v - b.v : b.v - a.v; });
+    var perCap = SL.data.benchmarks.PER_CAPITA[meta.k];
+
+    var track = el('div', { class: 'bm-track' }, pts.map(function (p) {
+      var tip = p.name + ': ' + X.fmtInd(meta, p.v) + (meta.unit ? ' ' + meta.unit : '');
+      if (perCap) tip += '  (' + U.n1(p.v / BM.pop(p.k) * (meta.k === 'emissions' ? 1 : 1000)) + ' ' + perCap + ')';
+      if (p.note) tip += '\n\n' + p.note;
+      return el('div', {
+        class: 'bm-pin' + (p.self ? ' self' : ''),
+        style: { left: pos(p.v) + '%', '--pin': p.color },
+        title: tip
+      }, [el('span', { class: 'bm-lbl', text: p.short })]);
+    }));
+
+    return el('div', { class: 'bm' }, [
+      track,
+      logScale ? el('div', { class: 'bm-scalenote',
+        title: 'Die Werte liegen um mehr als das Zwanzigfache auseinander. Linear gezeichnet wären sechs der sieben Marken nicht mehr zu unterscheiden.',
+        text: 'logarithmische Skala' }) : null,
+      el('div', { class: 'bm-legend' }, ranked.map(function (p, i) {
+        return el('span', {
+          class: 'bm-leg' + (p.self ? ' self' : ''),
+          style: { color: p.color },
+          title: (p.note || p.name) + '\n' + X.fmtInd(meta, p.v) + (meta.unit ? ' ' + meta.unit : '')
+        }, [
+          el('b', { text: p.short }), ' ', X.fmtInd(meta, p.v),
+          p.note ? el('sup', { text: '*', style: { opacity: '.8' } }) : null
+        ]);
+      }))
+    ]);
+  };
+
   /* ---------- Rundinstrument ---------- */
   X.gauge = function (o) {
     var size = o.size || 108, r = size / 2 - 9, cx = size / 2, cy = size / 2;
@@ -176,42 +250,6 @@
       seats.push(el('div', { class: 'seat ' + (i < gov ? 'gov' : 'opp') }));
     }
     return el('div', { class: 'seatmap' }, seats);
-  };
-
-  X.parliamentChart = function (st, selected, onSelect) {
-    var defs = SL.data.parties.PARTIES || [];
-    var dynamic = st.parliament && st.parliament.seats ? st.parliament.seats : {};
-    var seatOwners = [];
-    defs.forEach(function (p) {
-      for (var n = 0; n < (dynamic[p.k] === undefined ? p.seats : dynamic[p.k]); n++) seatOwners.push(p);
-    });
-    var rows = [33, 39, 45, 51, 57], dots = [], idx = 0;
-    rows.forEach(function (count, row) {
-      var radius = 74 + row * 27;
-      for (var i = 0; i < count; i++) {
-        var angle = Math.PI - (i / (count - 1)) * Math.PI;
-        var owner = seatOwners[idx++] || defs[defs.length - 1];
-        var cx = 220 + Math.cos(angle) * radius;
-        var cy = 222 - Math.sin(angle) * radius;
-        dots.push(svg('circle', {
-          class: 'parl-seat' + (selected === owner.k ? ' selected' : ''),
-          cx: cx.toFixed(2), cy: cy.toFixed(2), r: selected === owner.k ? 4.3 : 3.55,
-          fill: owner.color, 'data-party': owner.k,
-          tabindex: '0', role: 'button', 'aria-label': owner.name + ', Sitz ' + idx,
-          onclick: (function (k) { return function () { if (onSelect) onSelect(k); }; })(owner.k),
-          onkeydown: (function (k) { return function (e) { if ((e.key === 'Enter' || e.key === ' ') && onSelect) onSelect(k); }; })(owner.k)
-        }, [svg('title', { text: owner.full })]));
-      }
-    });
-    return el('div', { class: 'parliament-wrap' }, [
-      svg('svg', { class: 'parliament-chart', viewBox: '0 0 440 236', role: 'img', 'aria-label': 'Interaktive Sitzverteilung im Parlament' }, [
-        svg('path', { class: 'parl-floor', d: 'M123 222 A97 97 0 0 1 317 222' }),
-        dots,
-        svg('text', { x: 220, y: 187, class: 'parl-number', 'text-anchor': 'middle', textContent: String(st.seatsGov) }),
-        svg('text', { x: 220, y: 204, class: 'parl-caption', 'text-anchor': 'middle', textContent: 'REGIERUNGSSITZE' }),
-        svg('line', { x1: 220, y1: 210, x2: 220, y2: 225, class: 'parl-majority-line' })
-      ])
-    ]);
   };
 
   /* ---------- Modal ---------- */
