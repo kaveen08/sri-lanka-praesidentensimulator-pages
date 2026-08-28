@@ -24,6 +24,78 @@
   };
 
   /* ---------------------------------------------------------
+     Regierungsmehrheit und Koalitionen
+     --------------------------------------------------------- */
+  function coalitionPartners(st) {
+    return st.parliament && st.parliament.coalition && Array.isArray(st.parliament.coalition.partners)
+      ? st.parliament.coalition.partners : [];
+  }
+
+  E.governmentSeats = function (st) {
+    var seats = st.parliament && st.parliament.seats ? st.parliament.seats : {};
+    return coalitionPartners(st).reduce(function (sum, key) { return sum + (seats[key] || 0); }, st.seatsGov || 0);
+  };
+
+  E.supportingSeats = function (st, policy) {
+    if (!policy) return E.governmentSeats(st);
+    var supporters = policy.party || [];
+    var seats = st.parliament && st.parliament.seats ? st.parliament.seats : {};
+    return coalitionPartners(st).reduce(function (sum, key) {
+      return sum + (supporters.indexOf(key) >= 0 ? (seats[key] || 0) : 0);
+    }, st.seatsGov || 0);
+  };
+
+  E.coalitionCost = function (partners) {
+    var n = (partners || []).length;
+    return n ? 12 + Math.max(0, n - 1) * 4 : 0;
+  };
+
+  E.coalitionCandidates = function (st) {
+    var seats = st.parliament && st.parliament.seats ? st.parliament.seats : {};
+    return (SL.data.parties.PARTIES || []).filter(function (party) {
+      if (party.k === 'NPP' || party.k === 'OTH' || !(seats[party.k] > 0)) return false;
+      return E.all().some(function (p) {
+        return !st.enacted[p.id] && (p.party || []).indexOf('NPP') >= 0 && (p.party || []).indexOf(party.k) >= 0;
+      });
+    });
+  };
+
+  E.canFormCoalition = function (st, partners) {
+    partners = Array.from(new Set(partners || []));
+    if (!st.parliament) return { ok: false, why: 'Keine Parlamentsdaten verfügbar.' };
+    if (st.seatsGov >= 150) return { ok: false, why: 'Mit mindestens 150 eigenen Sitzen ist keine Koalition nötig.' };
+    if (coalitionPartners(st).length) return { ok: false, why: 'Lösen Sie zuerst die bestehende Koalition auf.' };
+    if (!partners.length) return { ok: false, why: 'Wählen Sie mindestens eine Partnerpartei.' };
+    var allowed = E.coalitionCandidates(st).map(function (p) { return p.k; });
+    var invalid = partners.filter(function (key) { return allowed.indexOf(key) < 0; });
+    if (invalid.length) return { ok: false, why: 'Mindestens eine Partei ist derzeit kein möglicher Koalitionspartner.' };
+    var seats = st.parliament.seats;
+    var total = partners.reduce(function (sum, key) { return sum + (seats[key] || 0); }, st.seatsGov);
+    if (st.seatsGov < 113 && total < 113) return { ok: false, why: 'Diese Koalition erreicht mit ' + total + ' Sitzen keine einfache Mehrheit.' };
+    var cost = E.coalitionCost(partners);
+    if (st.pc < cost) return { ok: false, why: 'Dafür werden ' + cost + ' PK benötigt.' };
+    return { ok: true, cost: cost, seats: total };
+  };
+
+  E.formCoalition = function (st, partners) {
+    partners = Array.from(new Set(partners || []));
+    var can = E.canFormCoalition(st, partners);
+    if (!can.ok) return can;
+    st.pc -= can.cost;
+    st.parliament.coalition = { partners: partners.slice(), formedTurn: st.turn };
+    St.log(st, 'info', 'Koalition gebildet: ' + partners.join(', ') + '. Zusammen ' + can.seats + ' Sitze; Maßnahmen benötigen die Zustimmung ihrer Unterstützerparteien.');
+    return { ok: true, cost: can.cost, seats: can.seats, partners: partners.slice() };
+  };
+
+  E.dissolveCoalition = function (st, reason) {
+    var partners = coalitionPartners(st).slice();
+    if (!partners.length) return { ok: false, why: 'Es besteht keine Koalition.' };
+    st.parliament.coalition = { partners: [], formedTurn: null };
+    St.log(st, 'warn', reason || ('Koalition mit ' + partners.join(', ') + ' aufgelöst.'));
+    return { ok: true, partners: partners };
+  };
+
+  /* ---------------------------------------------------------
      Haushaltsrechnung
      --------------------------------------------------------- */
   /** Alle Haushaltsposten sind in Preisen von 2026 gespeichert und
@@ -362,8 +434,9 @@
     var need = M.NEEDS[p.need] || M.NEEDS.simple;
     var seatsNeeded = need.seats;
     if (p.need === 'exec' && st.presidentialPower < 60) seatsNeeded = 113;
-    if (seatsNeeded > 0 && st.seatsGov < seatsNeeded) {
-      return { ok: false, why: 'Keine Mehrheit: ' + st.seatsGov + ' von ' + seatsNeeded + ' benötigten Sitzen.' };
+    var supportingSeats = E.supportingSeats(st, p);
+    if (seatsNeeded > 0 && supportingSeats < seatsNeeded) {
+      return { ok: false, why: 'Keine unterstützende Mehrheit: ' + supportingSeats + ' von ' + seatsNeeded + ' benötigten Sitzen.' };
     }
     var cost = E.pcCost(st, p);
     if (st.pc < cost) return { ok: false, why: 'Politisches Kapital reicht nicht (' + Math.round(cost) + ' nötig).' };
@@ -391,6 +464,7 @@
     var f = 1;
     if (st.presidentialPower < 100) f += (100 - st.presidentialPower) / 110;
     if (st.approvalOverall < 40) f += (40 - st.approvalOverall) / 90;
+    f *= 1 + coalitionPartners(st).length * 0.10;
     f *= SL.data.risks.costMul(st, p);   /* offene strukturelle Hindernisse verteuern */
     return Math.round((p.pc || 0) * f);
   };
@@ -523,6 +597,10 @@
 
   E.reverseSpecial = function (st, p) {
     switch (p.special) {
+      case 'anti_defection':
+        st.flags.antiDefection = false;
+        St.log(st, 'warn', 'Das Überlaufverbot ist aufgehoben. Fraktionswechsel können wieder Sitze verschieben.');
+        break;
       case 'term_limit_removed':
         st.flags.termLimitRemoved = false;
         st.termLimit = 2;
@@ -758,7 +836,7 @@
     St.recomputeProvinces(st);
 
     /* 11. Politisches Kapital */
-    var gain = 12 + (st.approvalOverall - 50) * 0.35 + (st.seatsGov - 113) * 0.06;
+    var gain = 12 + (st.approvalOverall - 50) * 0.35 + (E.governmentSeats(st) - 113) * 0.06;
     gain *= (st.presidentialPower / 100);
     gain -= Math.max(0, st.streetPressure - 60) * 0.12;
     st.pc = U.clamp(st.pc + Math.max(2, gain), 0, 220);
@@ -917,7 +995,7 @@
     } else if (st.streetPressure < 70) {
       st.crisisCount = 0;
     }
-    if (st.seatsGov < 90 && st.approvalOverall < 32) {
+    if (E.governmentSeats(st) < 90 && st.approvalOverall < 32) {
       st.gameOver = { kind: 'impeach', title: 'Amtsenthebung',
         text: 'Ohne parlamentarische Basis und ohne Rückhalt in der Bevölkerung setzt das Parlament ein Amtsenthebungsverfahren in Gang. Es endet erfolgreich.' };
       return;
@@ -1008,7 +1086,7 @@
     return item;
   };
 
-  E.shiftSeats = function (st, delta, reason) {
+  function moveSeats(st, delta, reason) {
     if (!st.parliament || !st.parliament.seats) return 0;
     var parties = st.parliament.seats;
     var gov = parties.NPP;
@@ -1036,10 +1114,29 @@
       st.parliament.history = st.parliament.history.slice(0, 24);
     }
     return moved;
+  }
+
+  E.shiftSeats = function (st, delta, reason) {
+    var wanted = Math.round(delta || 0);
+    if (!wanted) return 0;
+    if (st.flags.antiDefection) {
+      st.parliament.lastBlockedShift = { turn: st.turn, delta: wanted, reason: reason || 'Sitzverschiebung' };
+      St.log(st, 'info', 'Überlaufverbot: Die beabsichtigte Sitzverschiebung (' + (wanted > 0 ? '+' : '') + wanted + ') findet nicht statt.');
+      return 0;
+    }
+    return moveSeats(st, wanted, reason);
+  };
+
+  E.applyParliamentElection = function (st, targetSeats, reason) {
+    var target = U.clamp(Math.round(targetSeats || 0), 0, st.seatsTotal || 225);
+    var moved = moveSeats(st, target - st.seatsGov, reason || 'Parlamentswahl');
+    if (coalitionPartners(st).length) E.dissolveCoalition(st, 'Die Koalition endet mit der Parlamentswahl und muss auf Grundlage der neuen Sitzverteilung neu gebildet werden.');
+    return moved;
   };
 
   E.canCourtSeats = function (st) {
     if (!st.parliament) return { ok: false, why: 'Keine Parlamentsdaten verfügbar.' };
+    if (st.flags.antiDefection) return { ok: false, why: 'Das Überlaufverbot verhindert Fraktionswechsel. Bilden Sie stattdessen eine Koalition.' };
     if (st.parliament.lastWhipTurn === st.turn) return { ok: false, why: 'In diesem Quartal wurden bereits Fraktionsgespräche geführt.' };
     if (st.seatsGov >= (st.seatsTotal || 225)) return { ok: false, why: 'Alle Sitze gehören bereits zur Regierungsfraktion.' };
     if (st.pc < 14) return { ok: false, why: 'Dafür werden 14 PK benötigt.' };
@@ -1061,6 +1158,30 @@
     st.mods.legitimacy = (st.mods.legitimacy || 0) - 0.8;
     St.log(st, 'warn', 'Die Fraktionsgespräche bleiben ohne Ergebnis.');
     return { ok: true, success: false, seats: 0, chance: chance };
+  };
+
+  E.updateLocalAuthority = function (st, provinceKey, changes) {
+    var ps = st.provinces && st.provinces[provinceKey];
+    if (!ps) return { ok: false, why: 'Provinz nicht gefunden.' };
+    var current = ps.localAuthority || { fundingWeight: 1, staffing: 'normal', priority: 'balanced' };
+    var next = Object.assign({}, current), changed = [];
+    if (changes.fundingWeight !== undefined && [0.85, 1, 1.15].indexOf(Number(changes.fundingWeight)) >= 0 && Number(changes.fundingWeight) !== Number(current.fundingWeight)) {
+      next.fundingWeight = Number(changes.fundingWeight); changed.push('Finanzierungsgewicht');
+    }
+    if (changes.staffing !== undefined && ['low', 'normal', 'strong'].indexOf(changes.staffing) >= 0 && changes.staffing !== current.staffing) {
+      next.staffing = changes.staffing; changed.push('Personalstärke');
+    }
+    if (changes.priority !== undefined && ['balanced', 'development', 'cohesion', 'stability'].indexOf(changes.priority) >= 0 && changes.priority !== current.priority) {
+      next.priority = changes.priority; changed.push('Priorität');
+    }
+    if (!changed.length) return { ok: false, why: 'Keine Änderung ausgewählt.' };
+    var cost = changed.length * 4;
+    if (st.pc < cost) return { ok: false, why: 'Dafür werden ' + cost + ' PK benötigt.' };
+    st.pc -= cost;
+    ps.localAuthority = next;
+    St.recomputeProvinces(st);
+    St.log(st, 'info', 'Lokale Verwaltung in ' + provinceKey + ' angepasst: ' + changed.join(', ') + ' (' + cost + ' PK).');
+    return { ok: true, cost: cost, changed: changed, localAuthority: next };
   };
 
   E.canDismissMinister = function (st, key) {
@@ -1459,7 +1580,7 @@
         var swing = (st.approvalOverall - 46) * 1.6 + (E.rand(st) - 0.5) * 14;
         var seats = Math.round(U.clamp(113 + swing, 55, 200));
         var before = st.seatsGov;
-        E.shiftSeats(st, seats - before, 'Vorgezogene Parlamentswahl');
+        E.applyParliamentElection(st, seats, 'Vorgezogene Parlamentswahl');
         st.pc = U.clamp(st.pc + (seats > before ? 18 : -8), 0, 220);
         St.log(st, seats > before ? 'good' : 'bad',
           'Vorgezogene Parlamentswahl: die Regierungsfraktion kommt auf ' + seats + ' von 225 Sitzen (vorher ' + before + ').');

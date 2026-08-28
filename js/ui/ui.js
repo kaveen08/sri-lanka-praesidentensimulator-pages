@@ -244,10 +244,11 @@
   };
 
   /* ---------- Sitzverteilung ---------- */
-  X.seatmap = function (gov, total) {
+  X.seatmap = function (gov, total, coalition) {
     var seats = [];
+    coalition = coalition || 0;
     for (var i = 0; i < total; i++) {
-      seats.push(el('div', { class: 'seat ' + (i < gov ? 'gov' : 'opp') }));
+      seats.push(el('div', { class: 'seat ' + (i < gov ? 'gov' : (i < gov + coalition ? 'coal' : 'opp')) }));
     }
     return el('div', { class: 'seatmap' }, seats);
   };
@@ -282,10 +283,60 @@
         svg('path', { class: 'parl-floor', d: 'M123 222 A97 97 0 0 1 317 222' }),
         dots,
         svg('text', { x: 220, y: 187, class: 'parl-number', 'text-anchor': 'middle', textContent: String(st.seatsGov) }),
-        svg('text', { x: 220, y: 204, class: 'parl-caption', 'text-anchor': 'middle', textContent: 'REGIERUNGSSITZE' }),
+        svg('text', { x: 220, y: 204, class: 'parl-caption', 'text-anchor': 'middle', textContent: 'NPP-SITZE' }),
         svg('line', { x1: 220, y1: 210, x2: 220, y2: 225, class: 'parl-majority-line' })
       ])
     ]);
+  };
+
+  /* ---------- Wiederverwendbare Provinzkarte ---------- */
+  X.provinceMap = function (st, opts) {
+    opts = opts || {};
+    var G = SL.data.geo, selected = opts.selected || null;
+    var s = svg('svg', {
+      class: 'lk-map' + (opts.compact ? ' compact' : ''),
+      width: opts.compact ? 210 : 252, height: opts.compact ? 356 : 428,
+      viewBox: G.VIEWBOX, role: 'img',
+      'aria-label': 'Interaktive Karte Sri Lankas mit neun Provinzen'
+    });
+    var gradientId = 'lk-map-glow-' + (opts.id || 'main');
+    var defs = svg('defs');
+    defs.appendChild(svg('radialGradient', { id: gradientId, cx: '50%', cy: '47%', r: '58%' }, [
+      svg('stop', { offset: '0%', 'stop-color': '#22d3ee', 'stop-opacity': '.12' }),
+      svg('stop', { offset: '72%', 'stop-color': '#22d3ee', 'stop-opacity': '.035' }),
+      svg('stop', { offset: '100%', 'stop-color': '#22d3ee', 'stop-opacity': '0' })
+    ]));
+    s.appendChild(defs);
+    s.appendChild(svg('ellipse', { class: 'map-glow', cx: 102, cy: 169, rx: 99, ry: 166, fill: 'url(#' + gradientId + ')' }));
+
+    G.PROVINCES.forEach(function (p) {
+      var ps = st.provinces[p.k], t = U.clamp(ps.dev / 100, 0, 1);
+      var fill = 'rgba(' + Math.round(10 + t * 20) + ',' + Math.round(40 + t * 150) + ',' + Math.round(60 + t * 160) + ',' + (0.32 + t * 0.5) + ')';
+      function choose(e) {
+        if (e && e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+        if (e && e.preventDefault) e.preventDefault();
+        if (opts.onSelect) opts.onSelect(selected === p.k && opts.toggle ? null : p.k);
+      }
+      s.appendChild(svg('path', {
+        class: 'prov' + (selected === p.k ? ' sel' : ''), d: p.path, fill: fill,
+        'fill-rule': 'evenodd', 'data-province': p.k, tabindex: '0', role: 'button',
+        'aria-label': p.name + ', Entwicklung ' + U.n0(ps.dev) + ', Vertrauen ' + U.n0(ps.trust) + ', Unruhe ' + U.n0(ps.unrest),
+        onclick: choose, onkeydown: choose
+      }, [svg('title', { textContent: p.name + ' — Hauptstadt ' + p.capital })]));
+    });
+    G.PROVINCES.forEach(function (p) {
+      if (p.cap) {
+        s.appendChild(svg('circle', { class: 'cap-dot', cx: p.cap[0], cy: p.cap[1], r: 2.1 }));
+        if (!opts.compact) s.appendChild(svg('text', { class: 'cap-lbl', x: p.cap[0] + 3.6, y: p.cap[1] + 2.4, textContent: p.capital }));
+      }
+      s.appendChild(svg('text', { class: 'pv', x: p.label[0], y: p.label[1], 'text-anchor': 'middle', textContent: p.k }));
+      s.appendChild(svg('text', { class: 'pv-num', x: p.label[0], y: p.label[1] + 9, 'text-anchor': 'middle', textContent: U.n0(st.provinces[p.k].dev) }));
+    });
+    s.appendChild(svg('path', { class: 'map-deco', d: 'M 111 329 L 111 335 M 111 332 L 181 332 M 181 329 L 181 335' }));
+    s.appendChild(svg('text', { class: 'map-scale', x: 146, y: 326, 'text-anchor': 'middle', textContent: '100 km' }));
+    s.appendChild(svg('path', { class: 'map-deco', d: 'M 24 32 L 24 14 M 24 14 L 21 19 M 24 14 L 27 19' }));
+    s.appendChild(svg('text', { class: 'map-scale', x: 24, y: 41, 'text-anchor': 'middle', textContent: 'N' }));
+    return s;
   };
 
   /* ---------- Modal ---------- */

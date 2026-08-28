@@ -51,7 +51,14 @@
     } else if (delta < 0) {
       seats.SJB = (seats.SJB || 0) - delta;
     }
-    return { seats: seats, lastWhipTurn: -1, history: [] };
+    return {
+      seats: seats, lastWhipTurn: -1, history: [],
+      coalition: { partners: [], formedTurn: null }
+    };
+  }
+
+  function defaultLocalAuthority() {
+    return { fundingWeight: 1, staffing: 'normal', priority: 'balanced' };
   }
 
   function defaultCabinet() {
@@ -185,7 +192,8 @@
         dev: Math.round(28 + p.gdpShare * 0.8 - p.poverty * 0.5 + 30),
         trust: p.k === 'NP' ? 26 : (p.k === 'EP' ? 34 : (p.k === 'CP' || p.k === 'UV' ? 38 : 48)),
         unrest: p.k === 'NP' ? 42 : (p.k === 'EP' ? 38 : 26),
-        funding: 0
+        funding: 0,
+        localAuthority: defaultLocalAuthority()
       };
     });
 
@@ -230,15 +238,21 @@
           + (formula.weights.poverty || 0) * (p.poverty / 10) * p.pop * 2.4
           + (formula.weights.gdp || 0) * p.gdpShare * 0.9;
       }
-      weights[p.k] = Math.max(0.1, w);
+      var ps = st.provinces[p.k];
+      var local = ps.localAuthority || (ps.localAuthority = defaultLocalAuthority());
+      var fundingWeight = [0.85, 1, 1.15].indexOf(Number(local.fundingWeight)) >= 0 ? Number(local.fundingWeight) : 1;
+      weights[p.k] = Math.max(0.1, w * fundingWeight);
       sumW += weights[p.k];
     });
 
     G2.PROVINCES.forEach(function (p) {
       var ps = st.provinces[p.k];
+      var local = ps.localAuthority || (ps.localAuthority = defaultLocalAuthority());
+      var staffingFactor = local.staffing === 'low' ? 0.9 : (local.staffing === 'strong' ? 1.1 : 1);
+      var priority = local.priority || 'balanced';
       var share = weights[p.k] / sumW;
       ps.funding = totalTransfer * share;
-      var perCapita = ps.funding / p.pop;                /* LKR Mrd. je Mio. Einwohner */
+      var perCapita = ps.funding / p.pop * staffingFactor; /* wirksam je Mio. Einwohner */
       var nationalPerCapita = totalTransfer / 22.2;
 
       var devTarget = 30
@@ -248,18 +262,25 @@
         - (p.poverty - 21) * 0.7
         + p.gdpShare * 0.45
         + (ind.growth - 3) * 1.2;
-      ps.dev = U.clamp(ps.dev + (devTarget - ps.dev) * 0.14, 0, 100);
+      if (priority === 'development') devTarget += 4;
+      else if (priority === 'cohesion') devTarget -= 1;
+      ps.dev = U.clamp(ps.dev + (devTarget - ps.dev) * 0.14 * staffingFactor, 0, 100);
 
       var trustTarget = 50;
       if (p.k === 'NP') trustTarget = ind.trustTamil;
       else if (p.k === 'EP') trustTarget = (ind.trustTamil * 0.42 + ind.trustMuslim * 0.42 + ind.legitimacy * 0.16);
       else if (p.k === 'CP' || p.k === 'UV') trustTarget = (ind.trustHill * 0.5 + ind.legitimacy * 0.5);
       else trustTarget = ind.legitimacy * 0.7 + (100 - ind.sinhalaPress) * 0.3;
-      ps.trust = U.clamp(ps.trust + (trustTarget - ps.trust) * 0.2, 0, 100);
+      if (priority === 'development') trustTarget -= 1;
+      else if (priority === 'cohesion') trustTarget += 4;
+      else if (priority === 'stability') trustTarget -= 2;
+      ps.trust = U.clamp(ps.trust + (trustTarget - ps.trust) * 0.2 * staffingFactor, 0, 100);
 
       var unrestTarget = U.clamp(
         st.streetPressure * 0.6 + (60 - ps.trust) * 0.5 + (p.poverty - 20) * 0.6 - ps.dev * 0.12, 0, 100);
-      ps.unrest = U.clamp(ps.unrest + (unrestTarget - ps.unrest) * 0.2, 0, 100);
+      if (priority === 'cohesion') unrestTarget -= 3;
+      else if (priority === 'stability') unrestTarget -= 4;
+      ps.unrest = U.clamp(ps.unrest + (unrestTarget - ps.unrest) * 0.2 * staffingFactor, 0, 100);
     });
   };
 
@@ -279,7 +300,20 @@
     st.parliament.seats = st.parliament.seats || defaultParliament(st.seatsGov).seats;
     st.parliament.history = Array.isArray(st.parliament.history) ? st.parliament.history : [];
     if (st.parliament.lastWhipTurn === undefined) st.parliament.lastWhipTurn = -1;
+    st.parliament.coalition = st.parliament.coalition || { partners: [], formedTurn: null };
+    st.parliament.coalition.partners = Array.isArray(st.parliament.coalition.partners)
+      ? st.parliament.coalition.partners.filter(function (k) {
+        return k !== 'NPP' && k !== 'OTH' && st.parliament.seats[k] > 0;
+      }) : [];
+    if (st.parliament.coalition.formedTurn === undefined) st.parliament.coalition.formedTurn = null;
     st.seatsGov = st.parliament.seats.NPP === undefined ? st.seatsGov : st.parliament.seats.NPP;
+    if (st.enacted && st.enacted.st_anti_defection) st.flags.antiDefection = true;
+
+    st.provinces = st.provinces || {};
+    G.PROVINCES.forEach(function (p) {
+      if (!st.provinces[p.k]) return;
+      st.provinces[p.k].localAuthority = Object.assign(defaultLocalAuthority(), st.provinces[p.k].localAuthority || {});
+    });
 
     var cabinetDefaults = defaultCabinet();
     st.cabinet = st.cabinet || {};

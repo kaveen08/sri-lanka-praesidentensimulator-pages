@@ -3,7 +3,7 @@
    ============================================================ */
 (function (V) {
   'use strict';
-  var U = SL.util, X = SL.ui, M = SL.model, E = SL.engine, B = SL.data.baseline, el = U.el;
+  var U = SL.util, X = SL.ui, M = SL.model, E = SL.engine, B = SL.data.baseline, G = SL.data.geo, el = U.el;
 
   function hist(st, key) { return st.history.map(function (h) { return h[key]; }).filter(function (v) { return v !== undefined; }); }
   function delta(st, key) {
@@ -103,6 +103,32 @@
       ])
     ]));
 
+    /* Interaktive Provinzkarte direkt im Lagezentrum */
+    var selectedProvince = V.selectedProvince || 'WP';
+    V.selectedProvince = selectedProvince;
+    var province = G.PROV_BY_KEY[selectedProvince], provinceState = st.provinces[selectedProvince];
+    left.appendChild(X.panel('Sri Lanka · Provinzlage', [
+      el('div', { class: 'dashboard-map' }, [
+        X.provinceMap(st, {
+          id: 'dashboard', compact: true, selected: selectedProvince,
+          onSelect: function (key) { V.selectedProvince = key; SL.app.render(); }
+        }),
+        el('div', { class: 'dashboard-map-info' }, [
+          el('div', { class: 'row gap6 wrap' }, [
+            el('strong', { style: { color: 'var(--cy-bright)' }, text: province.name }),
+            X.badge(province.capital, ''), X.badge(U.n1(province.pop) + ' Mio.', '')
+          ]),
+          X.meter({ label: 'Entwicklung', value: provinceState.dev, min: 0, max: 100, text: U.n0(provinceState.dev) }),
+          X.meter({ label: 'Vertrauen', value: provinceState.trust, min: 0, max: 100, text: U.n0(provinceState.trust) }),
+          X.meter({ label: 'Unruhe', value: provinceState.unrest, min: 0, max: 100, inv: true, text: U.n0(provinceState.unrest) }),
+          el('div', { class: 'row between wrap gap6', style: { marginTop: '8px' } }, [
+            el('span', { class: 'mono xsmall muted', text: U.n0(provinceState.funding * E.scale(st)) + ' Mrd. LKR zugewiesen' }),
+            el('button', { class: 'tiny', text: 'Provinz verwalten', onclick: function () { SL.app.go('devolution'); } })
+          ])
+        ])
+      ])
+    ]));
+
     /* Lagebild kompakt */
     var probs = SL.data.problems.PROBLEMS.map(function (p) { return { p: p, v: p.score(st) }; })
       .sort(function (a, b) { return a.v - b.v; });
@@ -132,10 +158,10 @@
     ]));
 
     /* Parlament */
-    var need = st.seatsGov;
+    var need = E.governmentSeats(st), ownSeats = st.seatsGov, coalitionSeats = need - ownSeats;
     right.appendChild(X.panel('Parlament', [
       el('div', { class: 'row between', style: { marginBottom: '8px' } }, [
-        el('span', { class: 'mono', style: { fontSize: '20px', color: 'var(--cy-bright)' }, text: need + ' / 225' }),
+        el('span', { class: 'mono', style: { fontSize: '20px', color: 'var(--cy-bright)' }, text: ownSeats + (coalitionSeats ? ' +' + coalitionSeats : '') + ' / 225' }),
         el('div', { class: 'col', style: { alignItems: 'flex-end' } }, [
           el('span', { class: 'xsmall', style: { color: need >= 150 ? 'var(--green)' : 'var(--red)' },
             text: need >= 150 ? 'Zweidrittelmehrheit vorhanden' : 'keine Zweidrittelmehrheit' }),
@@ -143,7 +169,12 @@
             text: need >= 113 ? 'einfache Mehrheit vorhanden' : 'keine einfache Mehrheit' })
         ])
       ]),
-      X.seatmap(need, 225),
+      X.seatmap(ownSeats, 225, coalitionSeats),
+      coalitionSeats ? el('div', { class: 'row gap10 wrap xsmall muted', style: { marginTop: '7px' } }, [
+        el('span', {}, [el('span', { class: 'seat-key gov' }), ' NPP ' + ownSeats]),
+        el('span', {}, [el('span', { class: 'seat-key coal' }), ' Koalition ' + coalitionSeats]),
+        el('span', { text: 'Partnersitze zählen nur bei unterstützten Maßnahmen.' })
+      ]) : null,
       el('div', { class: 'row gap10', style: { marginTop: '10px' } }, [
         el('div', { class: 'grow' }, [
           el('div', { class: 'hud-label', text: 'Politisches Kapital' }),

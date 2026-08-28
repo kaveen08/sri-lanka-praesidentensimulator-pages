@@ -142,6 +142,22 @@
   background: var(--bg-inset);
   border: 1px solid var(--line-faint);
 }
+
+/* ---------- Gruppierte Politikbereiche ---------- */
+.policy-groups, .report-policy-groups { display:flex; flex-direction:column; gap:10px; }
+.policy-group, .report-policy-group { border:1px solid var(--line-faint); background:rgba(255,255,255,.012); }
+.policy-group-head {
+  width:100%; display:flex; align-items:center; gap:8px; padding:10px 12px;
+  border:0; border-bottom:1px solid transparent; background:linear-gradient(90deg,rgba(34,211,238,.08),transparent);
+  box-shadow:none; text-align:left; text-transform:none; letter-spacing:0;
+}
+.policy-group.open .policy-group-head, .policy-group-head.static { border-bottom-color:var(--line-faint); }
+.policy-group-head:hover { box-shadow:none; background:linear-gradient(90deg,rgba(34,211,238,.15),transparent); }
+.policy-group-head.static { cursor:default; color:var(--tx); }
+.policy-group-arrow { color:var(--cy); font-family:var(--font-mono); width:12px; }
+.policy-group-title { color:var(--tx-bright); font-size:13px; font-weight:700; }
+.policy-group-body { padding:11px; }
+.policy-group-body.collapsed { display:none; }
 .chip {
   font-family: var(--font-mono); font-size: 9.5px; letter-spacing:.09em; text-transform: uppercase;
   padding: 4px 9px; border: 1px solid var(--line-faint); color: var(--tx-mute);
@@ -241,6 +257,7 @@
 }
 .lk-map path.prov:hover { stroke: var(--cy-bright); stroke-width: 1.5; filter: brightness(1.42) drop-shadow(0 0 2px rgba(103,232,249,.6)); }
 .lk-map path.prov.sel { stroke: #fff; stroke-width: 1.8; filter: brightness(1.55) drop-shadow(0 0 3px rgba(255,255,255,.55)); }
+.lk-map path.prov:focus { outline:none; stroke:var(--amber); stroke-width:2; filter:brightness(1.45); }
 .lk-map text { font-family: var(--font-mono); font-size: 7.5px; fill: var(--tx); pointer-events:none;
   letter-spacing: .05em; }
 .lk-map text.pv { font-size: 8.5px; fill: var(--tx-bright); font-weight: 700;
@@ -266,8 +283,12 @@
 .seatmap { display:flex; flex-wrap: wrap; gap: 2px; max-width: 100%; }
 .seat { width: 8px; height: 8px; border-radius: 1px; background: var(--bg-raised); }
 .seat.gov { background: var(--cy); box-shadow: 0 0 5px var(--cy-glow); }
+.seat.coal { background:var(--green); box-shadow:0 0 5px rgba(52,211,153,.4); }
 .seat.reb { background: var(--amber); }
 .seat.opp { background: #33506b; }
+.seat-key { width:8px; height:8px; display:inline-block; border-radius:1px; margin-right:3px; }
+.seat-key.gov { background:var(--cy); }
+.seat-key.coal { background:var(--green); }
 .parliament-panel { margin-bottom: 14px; }
 .parliament-layout { display:grid; grid-template-columns: minmax(430px,1.35fr) minmax(250px,.65fr); gap:22px; align-items:center; }
 .parliament-wrap { width:100%; overflow:hidden; }
@@ -289,6 +310,17 @@
 .parl-party-name { font-size:15px; line-height:1.4; font-weight:700; }
 .parl-big-seat { font-size:30px; color:var(--tx-bright); }
 .majority-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.coalition-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:10px; }
+.coalition-option { display:flex; align-items:center; gap:8px; text-align:left; text-transform:none; letter-spacing:0; }
+.coalition-option.on { border-color:var(--green); background:rgba(52,211,153,.10); color:var(--green); }
+
+/* ---------- Karte und lokale Verwaltung ---------- */
+.dashboard-map { display:grid; grid-template-columns:minmax(190px,230px) minmax(230px,1fr); gap:16px; align-items:center; }
+.dashboard-map-info { min-width:0; }
+.local-admin-box { border:1px solid var(--line-faint); background:rgba(34,211,238,.035); padding:10px; }
+.local-control-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:9px; }
+.local-control { display:flex; flex-direction:column; gap:5px; min-width:0; }
+.local-control select { width:100%; }
 .majority-grid > div { padding:8px; border:1px solid var(--line-faint); background:var(--bg-inset); }
 .majority-grid span, .majority-grid strong { display:block; }
 .majority-grid strong { color:var(--tx-bright); margin-top:3px; font-size:11px; }
@@ -358,6 +390,14 @@
   .parliament-detail { border-left:0; border-top:1px solid var(--line-faint); padding:14px 0 0; }
   .cabinet-grid { grid-template-columns:1fr; }
   .institution-grid { grid-template-columns:1fr 1fr; }
+}
+
+@media (max-width: 850px) {
+  .dashboard-map { grid-template-columns:1fr; }
+  .dashboard-map .lk-map { margin-inline:auto; }
+  .local-control-grid, .coalition-options { grid-template-columns:1fr; }
+  .policy-group-head { flex-wrap:wrap; }
+  .policy-group-title { min-width:calc(100% - 32px); }
 }
 @media (max-width: 560px) {
   .institution-grid { grid-template-columns:1fr; }

@@ -7,6 +7,7 @@
 
   var st = null;
   var current = 'dashboard';
+  var navOpen = {};
 
   /* ---------------------------------------------------------
      Ansichtsregister
@@ -163,12 +164,25 @@
   function renderRail() {
     var rail = U.$('#rail');
     U.clear(rail);
-    NAV.forEach(function (g) {
-      var box = el('div', { class: 'nav-group' }, [el('span', { class: 'hud-label', text: g.group })]);
+    NAV.forEach(function (g, groupIndex) {
+      var key = g.group.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      var activeInGroup = g.items.some(function (it) { return it.k === current; });
+      if (navOpen[key] === undefined) navOpen[key] = activeInGroup || groupIndex === 0;
+      if (activeInGroup) navOpen[key] = true;
+      var open = navOpen[key];
+      var box = el('div', { class: 'nav-group' + (open ? ' open' : '') }, [
+        el('button', { class: 'nav-group-toggle', 'aria-expanded': open ? 'true' : 'false', 'aria-label': g.group, title: g.group,
+          onclick: function () { navOpen[key] = !navOpen[key]; renderRail(); } }, [
+          el('span', { class: 'nav-group-arrow', text: open ? '▾' : '▸' }),
+          el('span', { class: 'hud-label', text: g.group })
+        ])
+      ]);
+      var items = el('div', { class: 'nav-group-items' + (open ? '' : ' collapsed') });
       g.items.forEach(function (it) {
         var c = countOpen(it);
-        box.appendChild(el('div', {
+        items.appendChild(el('div', {
           class: 'nav-item' + (current === it.k ? ' active' : ''),
+          title: it.label,
           onclick: function () { A.go(it.k); }
         }, [
           el('span', { class: 'ico', text: it.ico }),
@@ -176,6 +190,7 @@
           c ? el('span', { class: 'nav-count' + (it.k === 'setbacks' ? ' urgent' : ''), text: c }) : null
         ]));
       });
+      box.appendChild(items);
       rail.appendChild(box);
     });
   }
@@ -207,8 +222,9 @@
         'Gewichtete Zustimmung über alle Gruppen'),
       stat('Pol. Kapital', U.n0(st.pc), null, st.pc > 40 ? 'var(--cy-bright)' : 'var(--amber)',
         'Wird jedes Quartal neu zugeteilt und für Maßnahmen ausgegeben'),
-      stat('Sitze', st.seatsGov + '/225', null, st.seatsGov >= 150 ? 'var(--green)' : (st.seatsGov >= 113 ? 'var(--amber)' : 'var(--red)'),
-        'Ab 113 einfache, ab 150 Zweidrittelmehrheit'),
+      stat('Sitze', st.seatsGov + (E.governmentSeats(st) > st.seatsGov ? ' +' + (E.governmentSeats(st) - st.seatsGov) : '') + '/225', null,
+        E.governmentSeats(st) >= 150 ? 'var(--green)' : (E.governmentSeats(st) >= 113 ? 'var(--amber)' : 'var(--red)'),
+        'Eigene Sitze plus Koalitionspartner. Bei Maßnahmen zählen nur programmatisch zustimmende Partner.'),
       stat('Amtszeit', (st.termNumber || 1) + '/' + (st.termLimit === null ? '∞' : (st.termLimit || 2)), null,
         st.termLimit === null ? 'var(--amber)' : 'var(--cy-bright)',
         'Nächste reguläre Wahl: Ende ' + (st.termEndYear || SL.data.baseline.META.termEndYear)),

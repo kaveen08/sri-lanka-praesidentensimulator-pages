@@ -243,8 +243,9 @@
   V.makePolicyView = function (opts) {
     return function (st, host) {
       var key = opts.key;
-      FS[key] = FS[key] || { q: '', sub: null, party: null, status: 'all', sort: 'ratio' };
+      FS[key] = FS[key] || { q: '', party: null, status: 'all', sort: 'ratio', groups: {} };
       var f = FS[key];
+      f.groups = f.groups || {};
 
       var pool = E.all().filter(function (p) { return opts.cats.indexOf(p.cat) >= 0; });
       var subs = [];
@@ -264,7 +265,7 @@
 
       if (opts.extra) host.appendChild(opts.extra(st));
 
-      var listHost = el('div', { class: 'grid g2' });
+      var listHost = el('div', { class: 'policy-groups' });
 
       var search = el('input', { type: 'search', placeholder: 'Suchen…', value: f.q, style: { minWidth: '190px' },
         oninput: function (e) { f.q = e.target.value; draw(); } });
@@ -278,10 +279,7 @@
         U.clear(filters);
         U.append(filters, [
           search,
-          el('span', { class: 'hud-label', text: 'Bereich' }),
-          chip('alle', !f.sub, function () { f.sub = null; draw(); }),
-          subs.map(function (s) { return chip(s, f.sub === s, function () { f.sub = (f.sub === s ? null : s); draw(); }); }),
-          el('span', { class: 'hud-label', style: { marginLeft: '8px' }, text: 'Partei' }),
+          el('span', { class: 'hud-label', text: 'Partei' }),
           chip('alle', !f.party, function () { f.party = null; draw(); }),
           parties.map(function (pk) {
             var pp = SL.data.parties.BY_KEY[pk];
@@ -308,7 +306,6 @@
         drawFilters();
         var q = f.q.toLowerCase().trim();
         var list = pool.filter(function (p) {
-          if (f.sub && p.sub !== f.sub) return false;
           if (f.party && (p.party || []).indexOf(f.party) < 0) return false;
           var stt = E.status(st, p);
           if (f.status === 'open' && stt !== 'open') return false;
@@ -333,8 +330,34 @@
         U.clear(listHost);
         if (!list.length) {
           U.append(listHost, el('div', { class: 'faint small', text: 'Keine Maßnahme entspricht den Filtern.' }));
+          return;
         }
-        list.forEach(function (p) { listHost.appendChild(pcard(st, p, function () { SL.app.render(); })); });
+        subs.forEach(function (sub, index) {
+          var shown = list.filter(function (p) { return p.sub === sub; });
+          if (!shown.length) return;
+          var allInGroup = pool.filter(function (p) { return p.sub === sub; });
+          var counts = { open: 0, pending: 0, enacted: 0 };
+          allInGroup.forEach(function (p) { counts[E.status(st, p)]++; });
+          if (f.groups[sub] === undefined) f.groups[sub] = index === 0;
+          var expanded = q ? true : !!f.groups[sub];
+          var body = el('div', { class: 'policy-group-body grid g2' + (expanded ? '' : ' collapsed') });
+          if (expanded) shown.forEach(function (p) { body.appendChild(pcard(st, p, function () { SL.app.render(); })); });
+          listHost.appendChild(el('section', { class: 'policy-group' + (expanded ? ' open' : '') }, [
+            el('button', { class: 'policy-group-head', 'aria-expanded': expanded ? 'true' : 'false', onclick: function () {
+              f.groups[sub] = !expanded; draw();
+            } }, [
+              el('span', { class: 'policy-group-arrow', text: expanded ? '▾' : '▸' }),
+              el('span', { class: 'policy-group-title', text: sub }),
+              el('span', { class: 'grow' }),
+              X.badge(allInGroup.length + ' gesamt', ''),
+              counts.open ? X.badge(counts.open + ' offen', 'cy') : null,
+              counts.pending ? X.badge(counts.pending + ' laufend', 'amber') : null,
+              counts.enacted ? X.badge(counts.enacted + ' beschlossen', 'green') : null,
+              shown.length !== allInGroup.length ? X.badge(shown.length + ' Treffer', 'violet') : null
+            ]),
+            body
+          ]));
+        });
       }
 
       function impactOf(p) {
@@ -360,7 +383,7 @@
   /* =========================================================
      DEVOLUTION  -  Karte, Kompetenzmatrix, Finanzausgleich
      ========================================================= */
-  var selProv = null;
+  V.selectedProvince = V.selectedProvince || null;
 
   V.devolution = function (st, host) {
     host.appendChild(el('div', { class: 'view-head' }, [
@@ -376,60 +399,52 @@
     var mapHost = el('div');
     function drawMap() {
       U.clear(mapHost);
-      var s = svg('svg', {
-        class: 'lk-map', width: 252, height: 428, viewBox: G.VIEWBOX,
-        role: 'img', 'aria-label': 'Sri Lanka mit seinen neun Provinzen und Provinzhauptstädten'
-      });
-
-      var defs = svg('defs');
-      var glow = svg('radialGradient', { id: 'lk-map-glow', cx: '50%', cy: '47%', r: '58%' }, [
-        svg('stop', { offset: '0%', 'stop-color': '#22d3ee', 'stop-opacity': '.12' }),
-        svg('stop', { offset: '72%', 'stop-color': '#22d3ee', 'stop-opacity': '.035' }),
-        svg('stop', { offset: '100%', 'stop-color': '#22d3ee', 'stop-opacity': '0' })
-      ]);
-      defs.appendChild(glow);
-      s.appendChild(defs);
-      s.appendChild(svg('ellipse', { class: 'map-glow', cx: 102, cy: 169, rx: 99, ry: 166, fill: 'url(#lk-map-glow)' }));
-
-      /* Flächen, eingefärbt nach Entwicklungsstand */
-      G.PROVINCES.forEach(function (p) {
-        var ps = st.provinces[p.k];
-        var t = U.clamp(ps.dev / 100, 0, 1);
-        var fill = 'rgba(' + Math.round(10 + t * 20) + ',' + Math.round(40 + t * 150) + ',' + Math.round(60 + t * 160) + ',' + (0.32 + t * 0.5) + ')';
-        s.appendChild(svg('path', {
-          class: 'prov' + (selProv === p.k ? ' sel' : ''), d: p.path, fill: fill,
-          'fill-rule': 'evenodd', 'data-province': p.k,
-          onclick: function () { selProv = (selProv === p.k ? null : p.k); drawMap(); drawInfo(); }
-        }, [svg('title', { textContent: p.name + ' — ' + p.capital })]));
-      });
-
-      /* Provinzhauptstädte */
-      G.PROVINCES.forEach(function (p) {
-        if (!p.cap) return;
-        s.appendChild(svg('circle', { class: 'cap-dot', cx: p.cap[0], cy: p.cap[1], r: 2.1 }));
-        s.appendChild(svg('text', { class: 'cap-lbl', x: p.cap[0] + 3.6, y: p.cap[1] + 2.4, textContent: p.capital }));
-      });
-
-      /* Kürzel und Entwicklungsindex */
-      G.PROVINCES.forEach(function (p) {
-        s.appendChild(svg('text', { class: 'pv', x: p.label[0], y: p.label[1], 'text-anchor': 'middle', textContent: p.k }));
-        s.appendChild(svg('text', { class: 'pv-num', x: p.label[0], y: p.label[1] + 9, 'text-anchor': 'middle',
-          textContent: U.n0(st.provinces[p.k].dev) }));
-      });
-
-      /* Maßstab und Nordpfeil */
-      s.appendChild(svg('path', { class: 'map-deco', d: 'M 111 329 L 111 335 M 111 332 L 181 332 M 181 329 L 181 335' }));
-      s.appendChild(svg('text', { class: 'map-scale', x: 146, y: 326, 'text-anchor': 'middle', textContent: '100 km' }));
-      s.appendChild(svg('path', { class: 'map-deco', d: 'M 24 32 L 24 14 M 24 14 L 21 19 M 24 14 L 27 19' }));
-      s.appendChild(svg('text', { class: 'map-scale', x: 24, y: 41, 'text-anchor': 'middle', textContent: 'N' }));
-
-      mapHost.appendChild(s);
+      mapHost.appendChild(X.provinceMap(st, {
+        id: 'devolution', selected: V.selectedProvince, toggle: true,
+        onSelect: function (key) { V.selectedProvince = key; drawMap(); drawInfo(); }
+      }));
     }
 
     var infoHost = el('div', { class: 'col gap10' });
+    function confirmLocalChange(field, value, label, effect) {
+      var province = G.PROV_BY_KEY[V.selectedProvince];
+      var changes = {}; changes[field] = value;
+      X.modal({
+        title: 'Lokale Verwaltung anpassen', tag: province.name,
+        body: el('div', { class: 'col gap10' }, [
+          el('div', { class: 'small', text: label }),
+          X.note(effect),
+          el('div', { class: 'row between' }, [
+            el('span', { class: 'muted small', text: 'Politische Kosten' }),
+            el('strong', { class: 'mono', text: '4 PK' })
+          ])
+        ]),
+        actions: function (close) { return [
+          el('button', { class: 'ghost', text: 'Abbrechen', onclick: function () { close(); drawInfo(); } }),
+          el('button', { class: 'primary', text: 'Änderung bestätigen', onclick: function () {
+            var result = E.updateLocalAuthority(st, V.selectedProvince, changes);
+            if (!result.ok) { X.toast('bad', 'Nicht möglich', result.why); return; }
+            SL.state.save(st); close(); SL.app.render();
+          } })
+        ]; }
+      });
+    }
+
+    function localControl(title, field, current, options) {
+      return el('label', { class: 'local-control' }, [
+        el('span', { class: 'hud-label', text: title }),
+        el('select', { value: String(current), onchange: function (e) {
+          var chosen = options.filter(function (o) { return String(o.value) === e.target.value; })[0];
+          if (chosen && String(chosen.value) !== String(current)) confirmLocalChange(field, chosen.value, chosen.label, chosen.effect);
+        } }, options.map(function (o) {
+          return el('option', { value: String(o.value), selected: String(o.value) === String(current), text: o.label });
+        }))
+      ]);
+    }
+
     function drawInfo() {
       U.clear(infoHost);
-      if (!selProv) {
+      if (!V.selectedProvince) {
         U.append(infoHost, el('div', { class: 'small muted', style: { lineHeight: '1.6' } },
           'Klicken Sie eine Provinz an. Die Zahl unter dem Kürzel ist der Entwicklungsindex, die Einfärbung folgt ihm.'));
         var rank = G.PROVINCES.map(function (p) { return { p: p, d: st.provinces[p.k].dev }; })
@@ -439,7 +454,7 @@
             el('th', { class: 'num', text: 'Vertrauen' }), el('th', { class: 'num', text: 'Unruhe' }), el('th', { class: 'num', text: 'Mittel' })])),
           el('tbody', {}, rank.map(function (r) {
             var ps = st.provinces[r.p.k];
-            return el('tr', { onclick: function () { selProv = r.p.k; drawMap(); drawInfo(); }, style: { cursor: 'pointer' } }, [
+            return el('tr', { onclick: function () { V.selectedProvince = r.p.k; drawMap(); drawInfo(); }, style: { cursor: 'pointer' } }, [
               el('td', { text: r.p.name }),
               el('td', { class: 'num', style: { color: r.d > 55 ? 'var(--green)' : (r.d > 38 ? 'var(--amber)' : 'var(--red)') }, text: U.n0(r.d) }),
               el('td', { class: 'num', text: U.n0(ps.trust) }),
@@ -450,8 +465,9 @@
         ]));
         return;
       }
-      var p = G.PROV_BY_KEY[selProv], ps = st.provinces[selProv];
-      var dists = G.DISTRICTS.filter(function (d) { return d.prov === selProv; });
+      var p = G.PROV_BY_KEY[V.selectedProvince], ps = st.provinces[V.selectedProvince];
+      var dists = G.DISTRICTS.filter(function (d) { return d.prov === V.selectedProvince; });
+      var local = ps.localAuthority || { fundingWeight: 1, staffing: 'normal', priority: 'balanced' };
       U.append(infoHost, [
         el('div', { class: 'row gap8 wrap' }, [
           el('span', { style: { fontSize: '15px', fontWeight: '700', color: 'var(--cy-bright)' }, text: p.name }),
@@ -464,6 +480,30 @@
           X.meter({ label: 'Vertrauen in den Zentralstaat', value: ps.trust, min: 0, max: 100, text: U.n0(ps.trust) }),
           X.meter({ label: 'Unruhe', value: ps.unrest, min: 0, max: 100, inv: true, text: U.n0(ps.unrest) }),
           X.meter({ label: 'Zugewiesene Mittel', value: ps.funding, min: 0, max: 400, text: U.n0(ps.funding * E.scale(st)) + ' Mrd. LKR' })
+        ]),
+        el('div', { class: 'local-admin-box' }, [
+          el('div', { class: 'row between wrap gap6' }, [
+            el('div', { class: 'hud-label', text: 'Lokale Verwaltung' }),
+            X.badge('Änderung je 4 PK', 'amber')
+          ]),
+          el('div', { class: 'local-control-grid' }, [
+            localControl('Finanzierungsgewicht', 'fundingWeight', local.fundingWeight, [
+              { value: 0.85, label: '85 % · reduziert', effect: 'Die Provinz erhält 15 % weniger Formelgewicht; der frei werdende Anteil wird auf die übrigen Provinzen verteilt.' },
+              { value: 1, label: '100 % · regulär', effect: 'Die Provinz erhält wieder exakt das Gewicht der gewählten Finanzausgleichsformel.' },
+              { value: 1.15, label: '115 % · erhöht', effect: 'Die Provinz erhält 15 % mehr Formelgewicht; die Transfersumme des Staates bleibt unverändert.' }
+            ]),
+            localControl('Personalstärke', 'staffing', local.staffing, [
+              { value: 'low', label: 'Niedrig · 0,9×', effect: 'Weniger Fachpersonal verlangsamt die Entwicklung von Versorgung, Vertrauen und Unruhe.' },
+              { value: 'normal', label: 'Normal · 1,0×', effect: 'Die lokale Verwaltung arbeitet mit normaler Umsetzungsgeschwindigkeit.' },
+              { value: 'strong', label: 'Verstärkt · 1,1×', effect: 'Zusätzliches Fachpersonal setzt Finanzierung und lokale Prioritäten wirksamer um.' }
+            ]),
+            localControl('Verwaltungspriorität', 'priority', local.priority, [
+              { value: 'balanced', label: 'Ausgewogen', effect: 'Keine Kennzahl wird gegenüber den anderen bevorzugt.' },
+              { value: 'development', label: 'Entwicklung', effect: 'Der Entwicklungszielwert steigt, während Vertrauensarbeit etwas zurücktritt.' },
+              { value: 'cohesion', label: 'Zusammenhalt', effect: 'Vertrauen steigt und Unruhe sinkt; reine Entwicklungsprojekte treten etwas zurück.' },
+              { value: 'stability', label: 'Stabilität', effect: 'Unruhe wird stärker bekämpft, allerdings auf Kosten des Vertrauens.' }
+            ])
+          ])
         ]),
         el('div', { class: 'hud-label', text: 'Bevölkerung nach Gemeinschaft' }),
         el('div', { class: 'row gap6 wrap' }, [
@@ -675,6 +715,8 @@
     var selectedKey = FS.partySelected || 'NPP';
     var selected = SL.data.parties.BY_KEY[selectedKey] || P[0];
     var selectedSeats = seats[selected.k] === undefined ? selected.seats : seats[selected.k];
+    var coalitionPartners = st.parliament.coalition && st.parliament.coalition.partners || [];
+    var governmentSeats = E.governmentSeats(st);
     host.appendChild(el('div', { class: 'view-head' }, [
       el('div', {}, [
         el('h2', { text: 'Parlament und Parteien' }),
@@ -693,7 +735,7 @@
               onclick: function () { FS.partySelected = p.k; SL.app.render(); }
             }, [
               el('span', { class: 'parl-swatch', style: { background: p.color, boxShadow: '0 0 8px ' + p.color } }),
-              el('span', { text: p.name }),
+              el('span', { text: p.name }), coalitionPartners.indexOf(p.k) >= 0 ? X.badge('Koalition', 'green') : null,
               el('strong', { class: 'mono', text: String(seats[p.k] || 0) })
             ]);
           }))
@@ -704,8 +746,10 @@
           el('div', { class: 'parl-big-seat mono', text: selectedSeats + ' Sitze' }),
           el('div', { class: 'small muted', style: { lineHeight: '1.6' }, text: selected.ideology + ' · ' + selected.lead }),
           el('div', { class: 'majority-grid' }, [
-            el('div', {}, [el('span', { class: 'hud-label', text: 'Einfache Mehrheit' }), el('strong', { text: st.seatsGov >= 113 ? 'erreicht' : (113 - st.seatsGov) + ' fehlen' })]),
-            el('div', {}, [el('span', { class: 'hud-label', text: 'Zweidrittelmehrheit' }), el('strong', { text: st.seatsGov >= 150 ? 'erreicht' : (150 - st.seatsGov) + ' fehlen' })])
+            el('div', {}, [el('span', { class: 'hud-label', text: 'Eigene Sitze' }), el('strong', { text: st.seatsGov + ' NPP' })]),
+            el('div', {}, [el('span', { class: 'hud-label', text: 'Regierungsbündnis' }), el('strong', { text: governmentSeats + ' Sitze' })]),
+            el('div', {}, [el('span', { class: 'hud-label', text: 'Einfache Mehrheit' }), el('strong', { text: governmentSeats >= 113 ? 'erreicht' : (113 - governmentSeats) + ' fehlen' })]),
+            el('div', {}, [el('span', { class: 'hud-label', text: 'Zweidrittelmehrheit' }), el('strong', { text: governmentSeats >= 150 ? 'rechnerisch erreicht' : (150 - governmentSeats) + ' fehlen' })])
           ]),
           el('button', { class: 'primary', disabled: !talks.ok, title: talks.ok ? 'Kostet 14 politisches Kapital; Ausgang abhängig von Zustimmung und Legitimität.' : talks.why,
             text: 'Fraktionsgespräche führen · 14 PK', onclick: function () {
@@ -714,10 +758,67 @@
               else X.toast(result.ok ? 'warn' : 'bad', result.ok ? 'Ohne Ergebnis' : 'Nicht möglich', result.ok ? 'Kein Abgeordneter wechselte die Fraktion.' : result.why);
               SL.app.render();
             } }),
-          el('div', { class: 'xsmall faint', text: 'Ein Versuch pro Quartal. Erfolg ist nicht garantiert.' })
+          el('div', { class: 'xsmall faint', text: talks.ok ? 'Ein Versuch pro Quartal. Erfolg ist nicht garantiert.' : talks.why })
         ])
       ])
     ], { class: 'parliament-panel' }));
+
+    /* Koalitionen übertragen keine Sitze, sondern stellen programmabhängige Stimmen bereit. */
+    if (coalitionPartners.length) {
+      host.appendChild(el('div', { style: { marginTop: '14px' } }, [
+        X.panel('Regierungskoalition', [
+          X.note('Partnersitze zählen nur bei Maßnahmen, die von der jeweiligen Partei unterstützt werden. Jede Partnerpartei verteuert politische Vorhaben um 10 %.', 'warn'),
+          el('div', { class: 'row gap8 wrap', style: { marginTop: '10px' } }, coalitionPartners.map(function (key) {
+            var party = SL.data.parties.BY_KEY[key];
+            return X.badge((party ? party.name : key) + ' · ' + (seats[key] || 0) + ' Sitze', 'green');
+          })),
+          el('div', { class: 'row between wrap gap8', style: { marginTop: '12px' } }, [
+            el('span', { class: 'small muted', text: 'Regierungsbündnis: ' + governmentSeats + ' Sitze · Kostenaufschlag ' + (coalitionPartners.length * 10) + ' %' }),
+            el('button', { class: 'danger tiny', text: 'Koalition auflösen', onclick: function () {
+              E.dissolveCoalition(st); SL.state.save(st); FS.coalitionDraft = []; SL.app.render();
+            } })
+          ])
+        ])
+      ]));
+    } else if (st.seatsGov < 150) {
+      var candidates = E.coalitionCandidates(st);
+      var candidateKeys = candidates.map(function (p) { return p.k; });
+      FS.coalitionDraft = (FS.coalitionDraft || []).filter(function (key) { return candidateKeys.indexOf(key) >= 0; });
+      var draft = FS.coalitionDraft;
+      var formation = E.canFormCoalition(st, draft);
+      var draftSeats = draft.reduce(function (sum, key) { return sum + (seats[key] || 0); }, st.seatsGov);
+      host.appendChild(el('div', { style: { marginTop: '14px' } }, [
+        X.panel('Koalition bilden', [
+          X.note('Wählen Sie programmatisch anschlussfähige Parteien. Sitze bleiben bei den Parteien; bei jedem Beschluss zählt nur die Unterstützung der Partner, die diese Maßnahme mittragen.'),
+          candidates.length ? el('div', { class: 'coalition-options' }, candidates.map(function (party) {
+            var on = draft.indexOf(party.k) >= 0;
+            var common = E.all().filter(function (p) {
+              return !st.enacted[p.id] && (p.party || []).indexOf('NPP') >= 0 && (p.party || []).indexOf(party.k) >= 0;
+            }).length;
+            return el('button', { class: 'coalition-option' + (on ? ' on' : ''), 'aria-pressed': on ? 'true' : 'false', onclick: function () {
+              FS.coalitionDraft = on ? draft.filter(function (key) { return key !== party.k; }) : draft.concat(party.k);
+              SL.app.render();
+            } }, [
+              el('span', { class: 'parl-swatch', style: { background: party.color } }),
+              el('span', { class: 'grow', text: party.name }),
+              X.badge((seats[party.k] || 0) + ' Sitze', 'cy'),
+              X.badge(common + ' gemeinsame Vorhaben', common ? 'green' : '')
+            ]);
+          })) : el('div', { class: 'faint small', text: 'Derzeit ist keine Partei mit Sitzen und gemeinsamen offenen Vorhaben verfügbar.' }),
+          el('div', { class: 'row between wrap gap8', style: { marginTop: '12px' } }, [
+            el('div', { class: 'small muted', text: 'Auswahl: ' + draftSeats + ' Sitze · Bildungskosten ' + E.coalitionCost(draft) + ' PK · laufender Aufschlag ' + (draft.length * 10) + ' %' }),
+            el('button', { class: 'primary', disabled: formation.ok ? null : 'disabled', title: formation.ok ? '' : formation.why,
+              text: 'Koalition bilden', onclick: function () {
+                var result = E.formCoalition(st, draft);
+                if (!result.ok) { X.toast('bad', 'Nicht möglich', result.why); return; }
+                SL.state.save(st); FS.coalitionDraft = [];
+                X.toast('good', 'Koalition gebildet', result.seats + ' Sitze im Regierungsbündnis.'); SL.app.render();
+              } })
+          ]),
+          formation.ok ? null : el('div', { class: 'xsmall faint', style: { marginTop: '6px', textAlign: 'right' }, text: formation.why })
+        ])
+      ]));
+    }
 
     host.appendChild(el('div', { class: 'grid g2' }, P.map(function (p) {
       var pols = E.all().filter(function (x) { return (x.party || []).indexOf(p.k) >= 0; });
@@ -727,7 +828,7 @@
         el('div', { class: 'pt-bar', style: { background: p.color, boxShadow: '0 0 14px ' + p.color } }),
         el('div', { class: 'row gap8 wrap', style: { marginLeft: '6px' } }, [
           el('span', { class: 'pt-name', style: { color: p.color }, text: p.name }),
-          p.gov ? X.badge('Regierung', 'green') : X.badge('Opposition', ''),
+          p.gov ? X.badge('Regierung', 'green') : (coalitionPartners.indexOf(p.k) >= 0 ? X.badge('Koalitionspartner', 'green') : X.badge('Opposition', '')),
           X.badge(liveSeats + ' Sitze', 'cy'),
           el('span', { class: 'grow' }),
           X.badge(done + '/' + pols.length + ' umgesetzt', done > 0 ? 'green' : '')
@@ -1039,15 +1140,26 @@
     ]));
 
     var enacted = Object.keys(st.enacted).map(E.byId).filter(Boolean);
+    var enactedGroups = M.DOMAINS.map(function (domain) {
+      return { domain: domain, policies: enacted.filter(function (p) { return p.cat === domain.k; }) };
+    }).filter(function (group) { return group.policies.length; });
     host.appendChild(el('div', { style: { marginTop: '14px' } }, [
       X.panel('Beschlossene Maßnahmen (' + enacted.length + ')', [
-        enacted.length ? el('div', { class: 'grid g2' }, enacted.map(function (p) {
-          return el('div', { class: 'pcard enacted' }, [
-            el('div', { class: 'pc-title', text: p.title }),
-            el('div', { class: 'pc-meta' }, [
-              X.badge((M.DOMAIN_BY_KEY[p.cat] || {}).label || p.cat, 'cy'),
-              st.enacted[p.id].active ? X.badge('wirksam', 'green') : X.badge('in Umsetzung', 'amber')
-            ])
+        enacted.length ? el('div', { class: 'report-policy-groups' }, enactedGroups.map(function (group) {
+          return el('section', { class: 'report-policy-group' }, [
+            el('div', { class: 'policy-group-head static' }, [
+              el('span', { class: 'policy-group-title', text: group.domain.label }),
+              el('span', { class: 'grow' }), X.badge(group.policies.length + ' beschlossen', 'green')
+            ]),
+            el('div', { class: 'grid g2 policy-group-body' }, group.policies.map(function (p) {
+              return el('div', { class: 'pcard enacted' }, [
+                el('div', { class: 'pc-title', text: p.title }),
+                el('div', { class: 'pc-meta' }, [
+                  X.badge(p.sub || group.domain.label, 'cy'),
+                  st.enacted[p.id].active ? X.badge('wirksam', 'green') : X.badge('in Umsetzung', 'amber')
+                ])
+              ]);
+            }))
           ]);
         })) : el('div', { class: 'faint small', text: 'Sie haben nichts beschlossen.' })
       ])
